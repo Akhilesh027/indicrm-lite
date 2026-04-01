@@ -15,6 +15,10 @@ import {
   LogOut,
   Settings,
   Crown,
+  FileText,
+  PackageCheck,
+  CreditCard,
+  Eye,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCRMStore } from '@/store/crmStore';
