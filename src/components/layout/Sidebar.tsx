@@ -15,6 +15,10 @@ import {
   LogOut,
   Settings,
   Crown,
+  FileText,
+  PackageCheck,
+  CreditCard,
+  Eye,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCRMStore } from '@/store/crmStore';
@@ -33,6 +37,10 @@ const navItems: NavItem[] = [
   { label: 'Leads', path: '/leads', icon: Target, roles: ['Admin', 'Manager', 'Telecaller', 'Sales Executive'] },
   { label: 'Customers', path: '/customers', icon: Building2, roles: ['Admin', 'Manager', 'Sales Executive', 'Customer'] },
   { label: 'Works', path: '/works', icon: ClipboardList, roles: ['Admin', 'Manager', 'Employee'] },
+  { label: 'Deliverables', path: '/deliverables', icon: PackageCheck, roles: ['Admin', 'Manager', 'Employee'] },
+  { label: 'Invoices', path: '/invoices', icon: FileText, roles: ['Admin', 'Manager', 'Accountant'] },
+  { label: 'Payments', path: '/payments', icon: CreditCard, roles: ['Admin', 'Manager', 'Accountant'] },
+  { label: 'Client Portal', path: '/client-portal', icon: Eye, roles: ['Admin', 'Manager', 'Customer'] },
   { label: 'Telecaller', path: '/telecaller', icon: Phone, roles: ['Admin', 'Manager', 'Telecaller'] },
   { label: 'Accounts', path: '/accounts', icon: Wallet, roles: ['Admin', 'Accountant'] },
   { label: 'Reports', path: '/reports', icon: BarChart3, roles: ['Admin', 'Manager', 'Accountant'] },

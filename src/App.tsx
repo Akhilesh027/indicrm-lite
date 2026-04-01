@@ -14,6 +14,10 @@ import TelecallerPage from "./pages/TelecallerPage";
 import AccountsPage from "./pages/AccountsPage";
 import ReportsPage from "./pages/ReportsPage";
 import NotFound from "./pages/NotFound";
+import InvoicesPage from "./pages/InvoicesPage";
+import DeliverablesPage from "./pages/DeliverablesPage";
+import PaymentsPage from "./pages/PaymentsPage";
+import ClientPortalPage from "./pages/ClientPortalPage";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +38,10 @@ const App = () => (
             <Route path="/telecaller" element={<TelecallerPage />} />
             <Route path="/accounts" element={<AccountsPage />} />
             <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/invoices" element={<InvoicesPage />} />
+            <Route path="/deliverables" element={<DeliverablesPage />} />
+            <Route path="/payments" element={<PaymentsPage />} />
+            <Route path="/client-portal" element={<ClientPortalPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
