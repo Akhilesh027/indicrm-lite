@@ -88,7 +88,7 @@ export default function EmployeesPage() {
     setFormData({
       name: emp.name, role: emp.role, department: emp.department, phone: emp.phone,
       email: emp.email, address: emp.address, salary: emp.salary,
-      dateOfJoining: emp.dateOfJoining, status: emp.status,
+      dateOfJoining: emp.dateOfJoining, status: emp.status as 'active' | 'inactive',
     });
     setShowEditModal(true);
   };
