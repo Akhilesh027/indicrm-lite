@@ -209,7 +209,7 @@ export default function InvoicesPage() {
               {/* Invoice Header */}
               <div className="flex justify-between items-start">
                 <div>
-                  <h2 className="text-xl font-heading font-bold text-primary">Knight21 Digi Hub</h2>
+                  <h2 className="text-xl font-heading font-bold text-primary">Digitalness</h2>
                   <p className="text-sm text-muted-foreground">Digital Marketing & IT Solutions</p>
                   <p className="text-sm text-muted-foreground">Hyderabad, Telangana</p>
                 </div>

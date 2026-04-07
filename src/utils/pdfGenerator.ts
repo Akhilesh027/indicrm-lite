@@ -13,7 +13,7 @@ export function generateInvoicePDF(invoice: Invoice) {
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(24);
   doc.setFont('helvetica', 'bold');
-  doc.text('Knight21 Digi Hub', 15, 20);
+  doc.text('Digitalness', 15, 20);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.text('Digital Marketing & IT Solutions', 15, 28);
@@ -139,7 +139,7 @@ export function generateInvoicePDF(invoice: Invoice) {
   const footerY = doc.internal.pageSize.getHeight() - 20;
   doc.setFontSize(8);
   doc.setTextColor(128, 128, 128);
-  doc.text('Thank you for your business! | Knight21 Digi Hub', pageWidth / 2, footerY, { align: 'center' });
+  doc.text('Thank you for your business! | Digitalness', pageWidth / 2, footerY, { align: 'center' });
   doc.text('GSTIN: 36AABFK1234A1ZV | PAN: AABFK1234A', pageWidth / 2, footerY + 5, { align: 'center' });
 
   return doc;
@@ -164,7 +164,7 @@ export function generateWorkReportPDF(
   doc.setFontSize(12);
   doc.text(`${customerName} - ${month}`, 15, 28);
   doc.setFontSize(9);
-  doc.text('Knight21 Digi Hub', pageWidth - 15, 18, { align: 'right' });
+  doc.text('Digitalness', pageWidth - 15, 18, { align: 'right' });
 
   doc.setTextColor(0, 0, 0);
 
@@ -224,7 +224,7 @@ export function generateWorkReportPDF(
   const footerY = doc.internal.pageSize.getHeight() - 15;
   doc.setFontSize(8);
   doc.setTextColor(128, 128, 128);
-  doc.text(`Generated on ${new Date().toLocaleDateString('en-IN')} | Knight21 Digi Hub`, pageWidth / 2, footerY, { align: 'center' });
+  doc.text(`Generated on ${new Date().toLocaleDateString('en-IN')} | Digitalness`, pageWidth / 2, footerY, { align: 'center' });
 
   return doc;
 }

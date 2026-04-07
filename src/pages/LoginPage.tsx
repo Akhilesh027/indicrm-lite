@@ -46,10 +46,10 @@ export default function LoginPage() {
               <Crown className="w-8 h-8 text-primary-foreground" />
             </div>
             <h1 className="text-2xl font-heading font-bold text-foreground">
-              Knight21 Digi Hub
+              Digitalness
             </h1>
             <p className="text-muted-foreground text-sm mt-1">
-              Customer Relationship Management
+              Digital Marketing CRM
             </p>
           </motion.div>
 
@@ -123,7 +123,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground mt-6">
-          © 2024 Knight21 Digi Hub. All rights reserved.
+          © 2024 Digitalness. All rights reserved.
         </p>
       </motion.div>
     </div>

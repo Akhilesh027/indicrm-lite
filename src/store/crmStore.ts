@@ -220,7 +220,7 @@ export const useCRMStore = create<CRMState>()(
       },
     }),
     {
-      name: 'knight21-crm-storage',
+      name: 'digitalness-crm-storage',
     }
   )
 );
