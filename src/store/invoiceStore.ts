@@ -69,6 +69,6 @@ export const useInvoiceStore = create<InvoiceState>()(
         paymentReminders: s.paymentReminders.map((r) => r.id === id ? { ...r, ...data } : r),
       })),
     }),
-    { name: 'knight21-invoice-storage' }
+    { name: 'digitalness-invoice-storage' }
   )
 );
