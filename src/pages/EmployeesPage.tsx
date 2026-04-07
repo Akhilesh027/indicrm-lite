@@ -144,7 +144,7 @@ export default function EmployeesPage() {
       {isEdit && (
         <div>
           <label className="text-sm font-medium text-foreground mb-1 block">Status</label>
-          <Select value={formData.status} onValueChange={(v: 'active' | 'inactive') => setFormData({ ...formData, status: v })}>
+          <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v as 'active' | 'inactive' })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="active">Active</SelectItem>
