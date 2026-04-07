@@ -123,7 +123,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground mt-6">
-          © 2024 Knight21 Digi Hub. All rights reserved.
+          © 2024 Digitalness. All rights reserved.
         </p>
       </motion.div>
     </div>

@@ -81,9 +81,9 @@ export function Sidebar() {
             className="flex flex-col"
           >
             <span className="font-heading font-bold text-lg text-sidebar-foreground">
-              Knight21
+              Digitalness
             </span>
-            <span className="text-xs text-sidebar-foreground/60">Digi Hub CRM</span>
+            <span className="text-xs text-sidebar-foreground/60">Digital Marketing CRM</span>
           </motion.div>
         )}
       </div>
