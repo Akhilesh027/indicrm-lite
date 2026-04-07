@@ -68,7 +68,7 @@ export default function EmployeesPage() {
 
   const handleEditEmployee = () => {
     if (!editingEmployee) return;
-    updateEmployee(editingEmployee.id, {
+      updateEmployee(editingEmployee.id, {
       name: formData.name,
       role: formData.role,
       department: formData.department,
@@ -76,7 +76,7 @@ export default function EmployeesPage() {
       email: formData.email,
       address: formData.address,
       salary: Number(formData.salary),
-      status: formData.status,
+      status: formData.status as 'active' | 'inactive',
     });
     toast({ title: 'Employee Updated', description: `${formData.name} updated` });
     setShowEditModal(false);
