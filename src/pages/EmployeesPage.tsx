@@ -16,9 +16,14 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 
-const emptyEmployee = {
+interface EmployeeForm {
+  name: string; role: string; department: string; phone: string; email: string;
+  address: string; salary: number; dateOfJoining: string; status: 'active' | 'inactive';
+}
+
+const emptyEmployee: EmployeeForm = {
   name: '', role: '', department: 'Sales', phone: '', email: '', address: '',
-  salary: 0, dateOfJoining: new Date().toISOString().split('T')[0], status: 'active' as const,
+  salary: 0, dateOfJoining: new Date().toISOString().split('T')[0], status: 'active',
 };
 
 export default function EmployeesPage() {
