@@ -1,16 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Search,
-  Plus,
-  Phone,
-  MessageSquare,
-  Mail,
-  MapPin,
-  CreditCard,
-  Package,
-  Eye,
-  ChevronRight,
+  Search, Plus, Phone, MessageSquare, Mail, MapPin, CreditCard, Package, Eye, ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,66 +9,83 @@ import { Badge } from '@/components/ui/badge';
 import { useCRMStore } from '@/store/crmStore';
 import { Customer } from '@/data/dummyData';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useToast } from '@/hooks/use-toast';
+
+const requirementOptions = [
+  'Digital Marketing', 'Website Design', 'App Development', 'Model Video',
+  'Promotion Video', 'CRM', 'SEO', 'Other',
+];
 
 export default function CustomersPage() {
-  const { customers, projects } = useCRMStore();
+  const { customers, addCustomer, projects } = useCRMStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newCust, setNewCust] = useState({
+    name: '', businessType: '', contactNumber: '', email: '', address: '', city: '',
+    package: '', requirements: [] as string[],
+  });
+  const { toast } = useToast();
 
   const filteredCustomers = customers.filter((customer) =>
     customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     customer.businessType.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
 
   const totalPaid = customers.reduce((sum, c) => sum + c.totalPaid, 0);
   const totalPending = customers.reduce((sum, c) => sum + c.totalPending, 0);
 
-  const getCustomerProjects = (customerId: string) => {
-    return projects.filter((p) => p.customerId === customerId);
+  const getCustomerProjects = (customerId: string) => projects.filter((p) => p.customerId === customerId);
+
+  const handleAddCustomer = () => {
+    if (!newCust.name || !newCust.contactNumber || !newCust.businessType) {
+      toast({ title: 'Error', description: 'Please fill name, contact and business type', variant: 'destructive' });
+      return;
+    }
+    const customer: Customer = {
+      id: `CUST${Date.now()}`,
+      name: newCust.name,
+      businessType: newCust.businessType,
+      contactNumbers: [newCust.contactNumber],
+      email: newCust.email,
+      address: newCust.address,
+      city: newCust.city,
+      requirements: newCust.requirements,
+      package: newCust.package || undefined,
+      projects: [],
+      totalPaid: 0,
+      totalPending: 0,
+      createdOn: new Date().toISOString().split('T')[0],
+    };
+    addCustomer(customer);
+    toast({ title: 'Customer Added', description: `${newCust.name} added successfully` });
+    setShowAddModal(false);
+    setNewCust({ name: '', businessType: '', contactNumber: '', email: '', address: '', city: '', package: '', requirements: [] });
   };
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
-      >
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-foreground">
-            Customers
-          </h1>
-          <p className="text-muted-foreground">
-            Manage your customer relationships
-          </p>
+          <h1 className="text-2xl font-heading font-bold text-foreground">Customers</h1>
+          <p className="text-muted-foreground">Manage your customer relationships</p>
         </div>
-        <Button variant="gradient">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Customer
+        <Button variant="gradient" onClick={() => setShowAddModal(true)}>
+          <Plus className="w-4 h-4 mr-2" /> Add Customer
         </Button>
       </motion.div>
 
       {/* Summary Cards */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="grid grid-cols-1 sm:grid-cols-4 gap-4"
-      >
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+        className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="p-5 rounded-xl bg-card border border-border shadow-card">
           <p className="text-3xl font-heading font-bold text-foreground">{customers.length}</p>
           <p className="text-sm text-muted-foreground">Total Customers</p>
@@ -97,40 +105,24 @@ export default function CustomersPage() {
       </motion.div>
 
       {/* Search */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search customers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
+          <Input placeholder="Search customers..." value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
         </div>
       </motion.div>
 
       {/* Customers Grid */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3 }}
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-      >
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredCustomers.map((customer, index) => {
           const customerProjects = getCustomerProjects(customer.id);
           return (
-            <motion.div
-              key={customer.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+            <motion.div key={customer.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
               className="bg-card rounded-xl border border-border shadow-card p-5 hover:shadow-card-hover transition-all cursor-pointer group"
-              onClick={() => setSelectedCustomer(customer)}
-            >
+              onClick={() => setSelectedCustomer(customer)}>
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-primary-foreground font-bold text-lg">
@@ -143,15 +135,12 @@ export default function CustomersPage() {
                 </div>
                 <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
               </div>
-
               <div className="space-y-2 mb-4">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Phone className="w-4 h-4" />
-                  <span>{customer.contactNumbers[0]}</span>
+                  <Phone className="w-4 h-4" /><span>{customer.contactNumbers[0]}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <MapPin className="w-4 h-4" />
-                  <span>{customer.city}</span>
+                  <MapPin className="w-4 h-4" /><span>{customer.city}</span>
                 </div>
                 {customer.package && (
                   <div className="flex items-center gap-2">
@@ -160,7 +149,6 @@ export default function CustomersPage() {
                   </div>
                 )}
               </div>
-
               <div className="flex items-center justify-between pt-4 border-t border-border">
                 <div>
                   <p className="text-xs text-muted-foreground">Paid</p>
@@ -181,12 +169,9 @@ export default function CustomersPage() {
       {/* Customer Detail Modal */}
       <Dialog open={!!selectedCustomer} onOpenChange={() => setSelectedCustomer(null)}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Customer Profile</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Customer Profile</DialogTitle></DialogHeader>
           {selectedCustomer && (
             <div className="space-y-6">
-              {/* Header */}
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-primary-foreground font-bold text-2xl">
                   {selectedCustomer.name.charAt(0)}
@@ -194,76 +179,45 @@ export default function CustomersPage() {
                 <div>
                   <h2 className="text-xl font-heading font-bold">{selectedCustomer.name}</h2>
                   <p className="text-muted-foreground">{selectedCustomer.businessType} • {selectedCustomer.city}</p>
-                  {selectedCustomer.package && (
-                    <Badge variant="new" className="mt-1">{selectedCustomer.package}</Badge>
-                  )}
+                  {selectedCustomer.package && <Badge variant="new" className="mt-1">{selectedCustomer.package}</Badge>}
                 </div>
               </div>
-
-              {/* Contact Info */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 rounded-lg bg-muted/50">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Phone className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Phone</span>
-                  </div>
-                  {selectedCustomer.contactNumbers.map((phone, idx) => (
-                    <p key={idx} className="text-sm">{phone}</p>
-                  ))}
+                  <div className="flex items-center gap-2 mb-2"><Phone className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-medium">Phone</span></div>
+                  {selectedCustomer.contactNumbers.map((phone, idx) => (<p key={idx} className="text-sm">{phone}</p>))}
                 </div>
                 <div className="p-4 rounded-lg bg-muted/50">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Mail className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Email</span>
-                  </div>
+                  <div className="flex items-center gap-2 mb-2"><Mail className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-medium">Email</span></div>
                   <p className="text-sm">{selectedCustomer.email || 'Not provided'}</p>
                 </div>
               </div>
-
-              {/* Payment Summary */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 rounded-lg bg-success/10 border border-success/30">
                   <p className="text-sm text-muted-foreground">Total Paid</p>
-                  <p className="text-2xl font-heading font-bold text-success">
-                    {formatCurrency(selectedCustomer.totalPaid)}
-                  </p>
+                  <p className="text-2xl font-heading font-bold text-success">{formatCurrency(selectedCustomer.totalPaid)}</p>
                 </div>
                 <div className="p-4 rounded-lg bg-warning/10 border border-warning/30">
                   <p className="text-sm text-muted-foreground">Pending Amount</p>
-                  <p className="text-2xl font-heading font-bold text-warning">
-                    {formatCurrency(selectedCustomer.totalPending)}
-                  </p>
+                  <p className="text-2xl font-heading font-bold text-warning">{formatCurrency(selectedCustomer.totalPending)}</p>
                 </div>
               </div>
-
-              {/* Requirements */}
               <div>
                 <h4 className="font-semibold mb-2">Services</h4>
                 <div className="flex flex-wrap gap-2">
-                  {selectedCustomer.requirements.map((req) => (
-                    <Badge key={req} variant="secondary">{req}</Badge>
-                  ))}
+                  {selectedCustomer.requirements.map((req) => (<Badge key={req} variant="secondary">{req}</Badge>))}
                 </div>
               </div>
-
-              {/* Projects */}
               <div>
                 <h4 className="font-semibold mb-2">Ongoing Projects</h4>
                 <div className="space-y-2">
                   {getCustomerProjects(selectedCustomer.id).map((project) => (
                     <div key={project.id} className="p-3 rounded-lg bg-muted/50 flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-sm">{project.title}</p>
-                        <p className="text-xs text-muted-foreground">{project.type}</p>
-                      </div>
+                      <div><p className="font-medium text-sm">{project.title}</p><p className="text-xs text-muted-foreground">{project.type}</p></div>
                       <Badge variant={
-                        project.status === 'Completed' ? 'completed' :
-                        project.status === 'In Progress' ? 'inProgress' :
-                        project.status === 'Review' ? 'info' :
-                        'pending'
-                      }>
-                        {project.status}
-                      </Badge>
+                        project.status === 'Completed' ? 'completed' : project.status === 'In Progress' ? 'inProgress' :
+                        project.status === 'Review' ? 'info' : 'pending'
+                      }>{project.status}</Badge>
                     </div>
                   ))}
                   {getCustomerProjects(selectedCustomer.id).length === 0 && (
@@ -271,28 +225,79 @@ export default function CustomersPage() {
                   )}
                 </div>
               </div>
-
-              {/* Actions */}
               <div className="flex gap-2 pt-4 border-t border-border">
-                <Button
-                  variant="outline"
-                  onClick={() => window.open(`tel:${selectedCustomer.contactNumbers[0]}`, '_blank')}
-                  className="flex-1"
-                >
-                  <Phone className="w-4 h-4 mr-2" />
-                  Call
+                <Button variant="outline" onClick={() => window.open(`tel:${selectedCustomer.contactNumbers[0]}`, '_blank')} className="flex-1">
+                  <Phone className="w-4 h-4 mr-2" /> Call
                 </Button>
-                <Button
-                  variant="success"
-                  onClick={() => window.open(`https://wa.me/91${selectedCustomer.contactNumbers[0]}`, '_blank')}
-                  className="flex-1"
-                >
-                  <MessageSquare className="w-4 h-4 mr-2" />
-                  WhatsApp
+                <Button variant="success"
+                  onClick={() => window.open(`https://wa.me/91${selectedCustomer.contactNumbers[0]}`, '_blank')} className="flex-1">
+                  <MessageSquare className="w-4 h-4 mr-2" /> WhatsApp
                 </Button>
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Customer Modal */}
+      <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Add New Customer</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Name *</label>
+                <Input value={newCust.name} onChange={(e) => setNewCust({ ...newCust, name: e.target.value })} placeholder="Business name" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Business Type *</label>
+                <Input value={newCust.businessType} onChange={(e) => setNewCust({ ...newCust, businessType: e.target.value })} placeholder="e.g. Healthcare" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Contact Number *</label>
+                <Input value={newCust.contactNumber} onChange={(e) => setNewCust({ ...newCust, contactNumber: e.target.value })} placeholder="Phone number" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Email</label>
+                <Input value={newCust.email} onChange={(e) => setNewCust({ ...newCust, email: e.target.value })} placeholder="Email" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">City</label>
+                <Input value={newCust.city} onChange={(e) => setNewCust({ ...newCust, city: e.target.value })} placeholder="City" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Package</label>
+                <Input value={newCust.package} onChange={(e) => setNewCust({ ...newCust, package: e.target.value })} placeholder="e.g. Premium" />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1 block">Address</label>
+              <Input value={newCust.address} onChange={(e) => setNewCust({ ...newCust, address: e.target.value })} placeholder="Full address" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-2 block">Requirements</label>
+              <div className="grid grid-cols-2 gap-2">
+                {requirementOptions.map((req) => (
+                  <div key={req} className="flex items-center gap-2">
+                    <Checkbox id={`cust-${req}`} checked={newCust.requirements.includes(req)}
+                      onCheckedChange={(checked) => {
+                        if (checked) setNewCust({ ...newCust, requirements: [...newCust.requirements, req] });
+                        else setNewCust({ ...newCust, requirements: newCust.requirements.filter((r) => r !== req) });
+                      }} />
+                    <label htmlFor={`cust-${req}`} className="text-sm">{req}</label>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 pt-4">
+              <Button variant="outline" onClick={() => setShowAddModal(false)} className="flex-1">Cancel</Button>
+              <Button variant="gradient" onClick={handleAddCustomer} className="flex-1">Add Customer</Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
