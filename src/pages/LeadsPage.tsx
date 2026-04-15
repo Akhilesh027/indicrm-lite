@@ -42,6 +42,10 @@ export default function LeadsPage() {
     name: '', contactNumber: '', businessType: '', city: '',
     source: 'Telecaller' as Lead['source'], assignedTo: '', requirements: [] as string[],
   });
+  const [selectedRole, setSelectedRole] = useState<string>('');
+  const [assignLeadId, setAssignLeadId] = useState<string | null>(null);
+  const [assignRole, setAssignRole] = useState<string>('');
+  const [assignEmployeeId, setAssignEmployeeId] = useState<string>('');
   const { toast } = useToast();
 
   const statuses = ['All', 'New', 'Demo Completed', 'Own Close', 'Own Loss', 'Follow Up', 'No Response', 'Call Back'];
@@ -94,6 +98,18 @@ export default function LeadsPage() {
   };
 
   const getEmployeeName = (id: string) => employees.find((e) => e.id === id)?.name || 'Unassigned';
+
+  const uniqueRoles = [...new Set(employees.map((e) => e.role))];
+  const employeesByRole = (role: string) => employees.filter((e) => e.role === role && e.status === 'active');
+
+  const handleAssignLead = () => {
+    if (!assignLeadId || !assignEmployeeId) return;
+    updateLead(assignLeadId, { assignedTo: assignEmployeeId });
+    toast({ title: 'Lead Assigned', description: `Lead assigned to ${getEmployeeName(assignEmployeeId)}` });
+    setAssignLeadId(null);
+    setAssignRole('');
+    setAssignEmployeeId('');
+  };
 
   const leadCounts = {
     total: leads.length,
@@ -198,7 +214,12 @@ export default function LeadsPage() {
                     <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1"><MapPin className="w-3 h-3" />{lead.city}</div>
                   </td>
                   <td className="p-4"><Badge variant="secondary">{lead.source}</Badge></td>
-                  <td className="p-4 text-sm text-muted-foreground">{getEmployeeName(lead.assignedTo)}</td>
+                  <td className="p-4">
+                    <button onClick={() => { setAssignLeadId(lead.id); setAssignRole(''); setAssignEmployeeId(''); }}
+                      className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer underline-offset-2 hover:underline">
+                      {getEmployeeName(lead.assignedTo)}
+                    </button>
+                  </td>
                   <td className="p-4"><Badge variant={statusColors[lead.status] as any}>{lead.status}</Badge></td>
                   <td className="p-4">
                     <div className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -331,15 +352,26 @@ export default function LeadsPage() {
                 </Select>
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground mb-1 block">Assign To</label>
-                <Select value={newLead.assignedTo} onValueChange={(v) => setNewLead({ ...newLead, assignedTo: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+                <label className="text-sm font-medium text-foreground mb-1 block">Select Role</label>
+                <Select value={selectedRole} onValueChange={(v) => { setSelectedRole(v); setNewLead({ ...newLead, assignedTo: '' }); }}>
+                  <SelectTrigger><SelectValue placeholder="Choose role first" /></SelectTrigger>
                   <SelectContent>
-                    {employees.map((e) => (<SelectItem key={e.id} value={e.id}>{e.name} ({e.role})</SelectItem>))}
+                    {uniqueRoles.map((role) => (<SelectItem key={role} value={role}>{role}</SelectItem>))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
+            {selectedRole && (
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Assign To ({selectedRole})</label>
+                <Select value={newLead.assignedTo} onValueChange={(v) => setNewLead({ ...newLead, assignedTo: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+                  <SelectContent>
+                    {employeesByRole(selectedRole).map((e) => (<SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <label className="text-sm font-medium text-foreground mb-2 block">Requirements</label>
               <div className="grid grid-cols-2 gap-2">
@@ -358,6 +390,60 @@ export default function LeadsPage() {
             <div className="flex gap-2 pt-4">
               <Button variant="outline" onClick={() => setShowAddModal(false)} className="flex-1">Cancel</Button>
               <Button variant="gradient" onClick={handleAddLead} className="flex-1">Add Lead</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {/* Assign Lead Modal */}
+      <Dialog open={!!assignLeadId} onOpenChange={() => setAssignLeadId(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Assign Lead</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-muted/50">
+              <p className="font-medium text-foreground">{leads.find((l) => l.id === assignLeadId)?.name}</p>
+              <p className="text-sm text-muted-foreground">Currently: {getEmployeeName(leads.find((l) => l.id === assignLeadId)?.assignedTo || '')}</p>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1 block">Step 1: Select Role</label>
+              <Select value={assignRole} onValueChange={(v) => { setAssignRole(v); setAssignEmployeeId(''); }}>
+                <SelectTrigger><SelectValue placeholder="Choose role first" /></SelectTrigger>
+                <SelectContent>
+                  {uniqueRoles.map((role) => (
+                    <SelectItem key={role} value={role}>
+                      {role} ({employeesByRole(role).length} members)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {assignRole && (
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Step 2: Select {assignRole}</label>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {employeesByRole(assignRole).map((emp) => (
+                    <div key={emp.id} onClick={() => setAssignEmployeeId(emp.id)}
+                      className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                        assignEmployeeId === emp.id
+                          ? 'border-primary bg-primary/5 shadow-sm'
+                          : 'border-border hover:border-primary/50'
+                      }`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-primary font-semibold text-sm">
+                          {emp.name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{emp.name}</p>
+                          <p className="text-xs text-muted-foreground">{emp.department} • {emp.performance.completedTasks} tasks done</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" onClick={() => setAssignLeadId(null)} className="flex-1">Cancel</Button>
+              <Button variant="gradient" onClick={handleAssignLead} disabled={!assignEmployeeId} className="flex-1">Assign</Button>
             </div>
           </div>
         </DialogContent>

@@ -44,6 +44,7 @@ const navItems: NavItem[] = [
   { label: 'Telecaller', path: '/telecaller', icon: Phone, roles: ['Admin', 'Manager', 'Telecaller'] },
   { label: 'Accounts', path: '/accounts', icon: Wallet, roles: ['Admin', 'Accountant'] },
   { label: 'Reports', path: '/reports', icon: BarChart3, roles: ['Admin', 'Manager', 'Accountant'] },
+  { label: 'Employee Report', path: '/employee-report', icon: Users, roles: ['Admin', 'Manager'] },
 ];
 
 export function Sidebar() {
