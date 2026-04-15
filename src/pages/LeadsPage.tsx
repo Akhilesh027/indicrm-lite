@@ -372,7 +372,6 @@ export default function LeadsPage() {
                 </Select>
               </div>
             )}
-            </div>
             <div>
               <label className="text-sm font-medium text-foreground mb-2 block">Requirements</label>
               <div className="grid grid-cols-2 gap-2">
