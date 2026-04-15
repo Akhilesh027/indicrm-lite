@@ -52,7 +52,7 @@ export default function EmployeeReportPage() {
   // Deliverables assigned
   const empDeliverables = deliverables.filter((d) => d.assignedTo === emp.id);
   const completedDeliverables = empDeliverables.filter((d) => d.status === 'Completed').length;
-  const pendingDeliverables = empDeliverables.filter((d) => d.status !== 'Completed' && d.status !== 'Cancelled').length;
+  const pendingDeliverables = empDeliverables.filter((d) => d.status !== 'Completed').length;
 
   // Attendance
   const empAttendance = attendance.filter((a) => a.employeeId === emp.id);
