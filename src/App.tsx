@@ -18,6 +18,7 @@ import InvoicesPage from "./pages/InvoicesPage";
 import DeliverablesPage from "./pages/DeliverablesPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import ClientPortalPage from "./pages/ClientPortalPage";
+import EmployeeReportPage from "./pages/EmployeeReportPage";
 
 const queryClient = new QueryClient();
 
@@ -42,6 +43,7 @@ const App = () => (
             <Route path="/deliverables" element={<DeliverablesPage />} />
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/client-portal" element={<ClientPortalPage />} />
+            <Route path="/employee-report" element={<EmployeeReportPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
