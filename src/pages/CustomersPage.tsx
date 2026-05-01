@@ -254,11 +254,11 @@ export default function CustomersPage() {
 interface ProfileProps {
   customer: Customer | null;
   onClose: () => void;
-  projects: ReturnType<typeof useCRMStore>['projects'];
-  employees: ReturnType<typeof useCRMStore>['employees'];
-  invoices: ReturnType<typeof useInvoiceStore>['invoices'];
-  deliverables: ReturnType<typeof useInvoiceStore>['deliverables'];
-  paymentRecords: ReturnType<typeof useInvoiceStore>['paymentRecords'];
+  projects: any[];
+  employees: any[];
+  invoices: any[];
+  deliverables: any[];
+  paymentRecords: any[];
   formatCurrency: (n: number) => string;
 }
 
