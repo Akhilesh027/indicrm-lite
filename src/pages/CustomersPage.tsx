@@ -1,18 +1,24 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Search, Plus, Phone, MessageSquare, Mail, MapPin, CreditCard, Package, Eye, ChevronRight,
+  Search, Plus, Phone, MessageSquare, Mail, MapPin, Package, ChevronRight,
+  Users, FileText, CheckCircle2, Clock, AlertCircle, TrendingUp, Download, Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useCRMStore } from '@/store/crmStore';
+import { useInvoiceStore } from '@/store/invoiceStore';
 import { Customer } from '@/data/dummyData';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const requirementOptions = [
   'Digital Marketing', 'Website Design', 'App Development', 'Model Video',
@@ -20,7 +26,8 @@ const requirementOptions = [
 ];
 
 export default function CustomersPage() {
-  const { customers, addCustomer, projects } = useCRMStore();
+  const { customers, addCustomer, projects, employees } = useCRMStore();
+  const { invoices, deliverables, paymentRecords } = useInvoiceStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
