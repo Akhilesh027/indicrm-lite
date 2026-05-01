@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   Building2, CheckCircle, Clock, AlertTriangle, Download,
   FileText, IndianRupee, BarChart2, TrendingUp, Calendar,
-  Video, Image, Globe, Smartphone, PenTool,
+  Video, Image, Globe, Smartphone, PenTool, Users, CreditCard,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -258,6 +258,77 @@ export default function ClientPortalPage() {
           {customerDeliverables.length === 0 && (
             <p className="text-center text-muted-foreground py-8">No deliverables for this period</p>
           )}
+        </div>
+      </motion.div>
+
+      {/* Team Working on This Client */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.37 }}>
+        <h3 className="font-heading font-bold mb-3 flex items-center gap-2">
+          <Users className="w-5 h-5 text-primary" /> Your Team
+        </h3>
+        {(() => {
+          const teamIds = new Set<string>();
+          customerProjects.forEach((p) => p.assignedTo.forEach((id) => teamIds.add(id)));
+          customerDeliverables.forEach((d) => teamIds.add(d.assignedTo));
+          const team = employees.filter((e) => teamIds.has(e.id));
+          if (team.length === 0) {
+            return <p className="text-center text-muted-foreground py-6 text-sm">No team assigned yet.</p>;
+          }
+          return (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {team.map((emp) => {
+                const empTasks = customerDeliverables.filter((d) => d.assignedTo === emp.id);
+                const done = empTasks.filter((t) => t.status === 'Completed').length;
+                const rate = empTasks.length ? Math.round((done / empTasks.length) * 100) : 0;
+                return (
+                  <div key={emp.id} className="p-4 rounded-xl bg-card border border-border shadow-card">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-primary font-semibold">
+                        {emp.name.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{emp.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{emp.role}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Tasks</span>
+                        <span className="font-medium">{done}/{empTasks.length}</span>
+                      </div>
+                      <Progress value={rate} className="h-1.5" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </motion.div>
+
+      {/* Payment History */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }}>
+        <h3 className="font-heading font-bold mb-3 flex items-center gap-2">
+          <CreditCard className="w-5 h-5 text-success" /> Payment History
+        </h3>
+        <div className="space-y-2">
+          {customerPayments.length === 0 ? (
+            <p className="text-center text-muted-foreground py-6 text-sm">No payments recorded yet.</p>
+          ) : customerPayments.map((p) => (
+            <div key={p.id} className="p-3 rounded-lg bg-card border border-border flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-2 h-2 rounded-full ${p.status === 'Completed' ? 'bg-success' : 'bg-warning'}`} />
+                <div>
+                  <p className="text-sm font-medium">{formatCurrency(p.amount)} via {p.method}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    {p.reference && ` • Ref: ${p.reference}`}
+                  </p>
+                </div>
+              </div>
+              <Badge variant={p.status === 'Completed' ? 'completed' : 'warning'}>{p.status}</Badge>
+            </div>
+          ))}
         </div>
       </motion.div>
 
