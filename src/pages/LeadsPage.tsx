@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Search, Plus, Filter, Phone, MessageSquare, Calendar, ChevronDown,
-  Building2, MapPin, Clock, CheckCircle, XCircle, PhoneCall, PhoneOff,
+  Building2, MapPin, Clock, CheckCircle, XCircle, PhoneCall, PhoneOff, UserPlus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -236,6 +236,11 @@ export default function LeadsPage() {
                         onClick={() => window.open(`https://wa.me/91${lead.contactNumber}`, '_blank')}
                         className="text-success hover:text-success">
                         <MessageSquare className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon"
+                        onClick={() => { setAssignLeadId(lead.id); setAssignRole(''); setAssignEmployeeId(''); }}
+                        className="text-primary hover:text-primary" title="Assign Lead">
+                        <UserPlus className="w-4 h-4" />
                       </Button>
                       <Button variant="ghost" size="icon"><Calendar className="w-4 h-4" /></Button>
                     </div>
