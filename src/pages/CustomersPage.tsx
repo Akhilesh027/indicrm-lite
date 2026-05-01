@@ -174,77 +174,16 @@ export default function CustomersPage() {
       </motion.div>
 
       {/* Customer Detail Modal */}
-      <Dialog open={!!selectedCustomer} onOpenChange={() => setSelectedCustomer(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>Customer Profile</DialogTitle></DialogHeader>
-          {selectedCustomer && (
-            <div className="space-y-6">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-primary-foreground font-bold text-2xl">
-                  {selectedCustomer.name.charAt(0)}
-                </div>
-                <div>
-                  <h2 className="text-xl font-heading font-bold">{selectedCustomer.name}</h2>
-                  <p className="text-muted-foreground">{selectedCustomer.businessType} • {selectedCustomer.city}</p>
-                  {selectedCustomer.package && <Badge variant="new" className="mt-1">{selectedCustomer.package}</Badge>}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-lg bg-muted/50">
-                  <div className="flex items-center gap-2 mb-2"><Phone className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-medium">Phone</span></div>
-                  {selectedCustomer.contactNumbers.map((phone, idx) => (<p key={idx} className="text-sm">{phone}</p>))}
-                </div>
-                <div className="p-4 rounded-lg bg-muted/50">
-                  <div className="flex items-center gap-2 mb-2"><Mail className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-medium">Email</span></div>
-                  <p className="text-sm">{selectedCustomer.email || 'Not provided'}</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-lg bg-success/10 border border-success/30">
-                  <p className="text-sm text-muted-foreground">Total Paid</p>
-                  <p className="text-2xl font-heading font-bold text-success">{formatCurrency(selectedCustomer.totalPaid)}</p>
-                </div>
-                <div className="p-4 rounded-lg bg-warning/10 border border-warning/30">
-                  <p className="text-sm text-muted-foreground">Pending Amount</p>
-                  <p className="text-2xl font-heading font-bold text-warning">{formatCurrency(selectedCustomer.totalPending)}</p>
-                </div>
-              </div>
-              <div>
-                <h4 className="font-semibold mb-2">Services</h4>
-                <div className="flex flex-wrap gap-2">
-                  {selectedCustomer.requirements.map((req) => (<Badge key={req} variant="secondary">{req}</Badge>))}
-                </div>
-              </div>
-              <div>
-                <h4 className="font-semibold mb-2">Ongoing Projects</h4>
-                <div className="space-y-2">
-                  {getCustomerProjects(selectedCustomer.id).map((project) => (
-                    <div key={project.id} className="p-3 rounded-lg bg-muted/50 flex items-center justify-between">
-                      <div><p className="font-medium text-sm">{project.title}</p><p className="text-xs text-muted-foreground">{project.type}</p></div>
-                      <Badge variant={
-                        project.status === 'Completed' ? 'completed' : project.status === 'In Progress' ? 'inProgress' :
-                        project.status === 'Review' ? 'info' : 'pending'
-                      }>{project.status}</Badge>
-                    </div>
-                  ))}
-                  {getCustomerProjects(selectedCustomer.id).length === 0 && (
-                    <p className="text-sm text-muted-foreground">No active projects</p>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-2 pt-4 border-t border-border">
-                <Button variant="outline" onClick={() => window.open(`tel:${selectedCustomer.contactNumbers[0]}`, '_blank')} className="flex-1">
-                  <Phone className="w-4 h-4 mr-2" /> Call
-                </Button>
-                <Button variant="success"
-                  onClick={() => window.open(`https://wa.me/91${selectedCustomer.contactNumbers[0]}`, '_blank')} className="flex-1">
-                  <MessageSquare className="w-4 h-4 mr-2" /> WhatsApp
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <CustomerProfileDialog
+        customer={selectedCustomer}
+        onClose={() => setSelectedCustomer(null)}
+        projects={projects}
+        employees={employees}
+        invoices={invoices}
+        deliverables={deliverables}
+        paymentRecords={paymentRecords}
+        formatCurrency={formatCurrency}
+      />
 
       {/* Add Customer Modal */}
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
