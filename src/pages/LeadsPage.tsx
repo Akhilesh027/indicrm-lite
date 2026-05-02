@@ -477,6 +477,94 @@ export default function LeadsPage() {
                 </Select>
               </div>
               <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Branch</label>
+                <Select value={newLead.branchId} onValueChange={(v) => setNewLead({ ...newLead, branchId: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Lead Score</label>
+                <Select value={newLead.leadScore} onValueChange={(v: LeadScore) => setNewLead({ ...newLead, leadScore: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {leadScores.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Budget Range</label>
+                <Select value={newLead.budgetRange} onValueChange={(v) => setNewLead({ ...newLead, budgetRange: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectContent>
+                    {budgetRanges.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Requirement Clarity</label>
+                <Select value={newLead.requirementClarity} onValueChange={(v: LeadClarity) => setNewLead({ ...newLead, requirementClarity: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {clarityOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Timeline</label>
+                <Select value={newLead.timeline} onValueChange={(v: LeadTimeline) => setNewLead({ ...newLead, timeline: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {timelines.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Budget Match</label>
+                <Select value={newLead.budgetMatch} onValueChange={(v: YesNo) => setNewLead({ ...newLead, budgetMatch: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {yesNoOptions.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Decision Maker</label>
+                <Select value={newLead.decisionMaker} onValueChange={(v: YesNo) => setNewLead({ ...newLead, decisionMaker: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {yesNoOptions.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Probability %</label>
+                <Input type="number" min={0} max={100} value={newLead.probability}
+                  onChange={(e) => setNewLead({ ...newLead, probability: Number(e.target.value) })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Expected Close</label>
+                <Input type="date" value={newLead.expectedClosingDate}
+                  onChange={(e) => setNewLead({ ...newLead, expectedClosingDate: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Next Follow-up</label>
+                <Input type="date" value={newLead.nextFollowUpDate}
+                  onChange={(e) => setNewLead({ ...newLead, nextFollowUpDate: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
                 <label className="text-sm font-medium text-foreground mb-1 block">Select Role</label>
                 <Select value={selectedRole} onValueChange={(v) => { setSelectedRole(v); setNewLead({ ...newLead, assignedTo: '' }); }}>
                   <SelectTrigger><SelectValue placeholder="Choose role first" /></SelectTrigger>
@@ -485,18 +573,20 @@ export default function LeadsPage() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            {selectedRole && (
               <div>
-                <label className="text-sm font-medium text-foreground mb-1 block">Assign To ({selectedRole})</label>
-                <Select value={newLead.assignedTo} onValueChange={(v) => setNewLead({ ...newLead, assignedTo: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                  <SelectContent>
-                    {employeesByRole(selectedRole).map((e) => (<SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>))}
-                  </SelectContent>
-                </Select>
+                {selectedRole && (
+                  <>
+                    <label className="text-sm font-medium text-foreground mb-1 block">Assign To</label>
+                    <Select value={newLead.assignedTo} onValueChange={(v) => setNewLead({ ...newLead, assignedTo: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+                      <SelectContent>
+                        {employeesByRole(selectedRole).map((e) => (<SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>))}
+                      </SelectContent>
+                    </Select>
+                  </>
+                )}
               </div>
-            )}
+            </div>
             <div>
               <label className="text-sm font-medium text-foreground mb-2 block">Requirements</label>
               <div className="grid grid-cols-2 gap-2">
