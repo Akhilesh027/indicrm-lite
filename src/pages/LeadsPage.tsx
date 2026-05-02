@@ -309,7 +309,23 @@ export default function LeadsPage() {
                     <div className="flex items-center gap-1 text-sm"><Building2 className="w-4 h-4 text-muted-foreground" /><span>{lead.businessType}</span></div>
                     <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1"><MapPin className="w-3 h-3" />{lead.city}</div>
                   </td>
-                  <td className="p-4"><Badge variant="secondary">{lead.source}</Badge></td>
+                  <td className="p-4">
+                    {lead.leadScore ? (() => {
+                      const m = scoreMeta[lead.leadScore];
+                      const I = m.icon;
+                      return (
+                        <Badge className={m.color} variant="outline">
+                          <I className="w-3 h-3 mr-1" /> {lead.leadScore}
+                        </Badge>
+                      );
+                    })() : <Badge variant="secondary">{lead.source}</Badge>}
+                    {lead.budgetRange && (
+                      <p className="text-[10px] text-muted-foreground mt-1">{lead.budgetRange}</p>
+                    )}
+                  </td>
+                  <td className="p-4">
+                    <p className="text-sm">{branches.find((b) => b.id === lead.branchId)?.name || '—'}</p>
+                  </td>
                   <td className="p-4">
                     <button onClick={() => { setAssignLeadId(lead.id); setAssignRole(''); setAssignEmployeeId(''); }}
                       className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer underline-offset-2 hover:underline">
@@ -320,17 +336,19 @@ export default function LeadsPage() {
                   <td className="p-4">
                     <div className="flex items-center gap-1 text-sm text-muted-foreground">
                       <Clock className="w-4 h-4" />
-                      {new Date(lead.lastContactDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      {lead.nextFollowUpDate
+                        ? new Date(lead.nextFollowUpDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                        : new Date(lead.lastContactDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                     </div>
                   </td>
                   <td className="p-4">
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => handleCallPopup(lead)} className="text-accent hover:text-accent">
+                      <Button variant="ghost" size="icon" onClick={() => handleCallPopup(lead)} className="text-accent hover:text-accent" title="Log Call">
                         <PhoneCall className="w-4 h-4" />
                       </Button>
                       <Button variant="ghost" size="icon"
                         onClick={() => window.open(`https://wa.me/91${lead.contactNumber}`, '_blank')}
-                        className="text-success hover:text-success">
+                        className="text-success hover:text-success" title="WhatsApp">
                         <MessageSquare className="w-4 h-4" />
                       </Button>
                       <Button variant="ghost" size="icon"
@@ -338,7 +356,13 @@ export default function LeadsPage() {
                         className="text-primary hover:text-primary" title="Assign Lead">
                         <UserPlus className="w-4 h-4" />
                       </Button>
-                      <Button variant="ghost" size="icon"><Calendar className="w-4 h-4" /></Button>
+                      {lead.leadScore !== 'Cold' && (
+                        <Button variant="ghost" size="icon"
+                          onClick={() => handlePushToPipeline(lead)}
+                          className="text-warning hover:text-warning" title="Add to Sales Pipeline">
+                          <TrendingUp className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </motion.tr>
