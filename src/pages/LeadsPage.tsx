@@ -117,18 +117,65 @@ export default function LeadsPage() {
       toast({ title: 'Error', description: 'Please fill name, contact and business type', variant: 'destructive' });
       return;
     }
+    const branchId = newLead.branchId || branchFromCity(newLead.city);
     const lead: Lead = {
       id: `LEAD${Date.now()}`,
       ...newLead,
+      branchId,
       status: 'New',
       notes: [],
       createdOn: new Date().toISOString().split('T')[0],
       lastContactDate: new Date().toISOString().split('T')[0],
+      inPipeline: newLead.leadScore !== 'Cold',
     };
     addLead(lead);
     toast({ title: 'Lead Added', description: `${newLead.name} added successfully` });
     setShowAddModal(false);
-    setNewLead({ name: '', contactNumber: '', businessType: '', city: '', source: 'Telecaller', assignedTo: '', requirements: [] });
+    setNewLead({
+      name: '', contactNumber: '', businessType: '', city: '',
+      source: 'Telecaller', assignedTo: '', requirements: [],
+      branchId: 'BR001', budgetRange: '', requirementClarity: 'Not Clear',
+      budgetMatch: 'No', timeline: 'Normal', decisionMaker: 'No', leadScore: 'Warm',
+      expectedClosingDate: '', probability: 30, nextFollowUpDate: '',
+    });
+  };
+
+  const handlePushToPipeline = (lead: Lead) => {
+    if (lead.leadScore === 'Cold') {
+      toast({ title: 'Cold lead', description: 'Cold leads stay in nurture, not pipeline.', variant: 'destructive' });
+      return;
+    }
+    if (deals.some((d) => d.leadId === lead.id)) {
+      toast({ title: 'Already in pipeline', description: 'A deal exists for this lead.' });
+      navigate('/sales-pipeline');
+      return;
+    }
+    const dealValue = lead.budgetRange?.includes('3L+') ? 300000
+      : lead.budgetRange?.includes('1L - ₹3L') ? 200000
+      : lead.budgetRange?.includes('50K - ₹1L') ? 75000
+      : lead.budgetRange?.includes('25K - ₹50K') ? 35000
+      : lead.budgetRange?.includes('10K - ₹25K') ? 18000 : 50000;
+    const newDeal: Deal = {
+      id: `DEAL${Date.now()}`,
+      leadId: lead.id,
+      title: `${lead.name} - ${lead.requirements.join(', ') || 'Discovery'}`,
+      customerName: lead.name,
+      contactNumber: lead.contactNumber,
+      businessType: lead.businessType,
+      branchId: lead.branchId || 'BR001',
+      stage: 'New',
+      dealValue,
+      probability: lead.probability ?? 50,
+      expectedCloseDate: lead.expectedClosingDate || '',
+      assignedTo: lead.assignedTo,
+      notes: lead.notes.join('\n'),
+      callLogs: [],
+      createdOn: new Date().toISOString().split('T')[0],
+    };
+    addDeal(newDeal);
+    updateLead(lead.id, { inPipeline: true });
+    toast({ title: '✓ Added to Sales Pipeline', description: `Deal created for ${lead.name}` });
+    navigate('/sales-pipeline');
   };
 
   const getEmployeeName = (id: string) => employees.find((e) => e.id === id)?.name || 'Unassigned';
