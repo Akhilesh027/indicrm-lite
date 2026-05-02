@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Invoice } from '@/data/invoiceData';
+import { Proposal } from '@/data/proposalData';
 
 export function generateInvoicePDF(invoice: Invoice) {
   const doc = new jsPDF();
@@ -234,5 +235,139 @@ function formatCurrency(amount: number): string {
 }
 
 function formatDate(dateStr: string): string {
+  if (!dateStr) return '—';
   return new Date(dateStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// ===== Proposal PDF (cleaner template) =====
+export function generateProposalPDF(proposal: Proposal) {
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Top accent bar
+  doc.setFillColor(15, 23, 42); // slate-900
+  doc.rect(0, 0, pageWidth, 8, 'F');
+  doc.setFillColor(99, 102, 241); // indigo-500
+  doc.rect(0, 8, pageWidth, 2, 'F');
+
+  // Header block
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(22);
+  doc.text('PROPOSAL', 15, 28);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(`# ${proposal.proposalNumber}`, 15, 35);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Digitalness', pageWidth - 15, 28, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(100);
+  doc.text('Digital Marketing & IT Solutions', pageWidth - 15, 34, { align: 'right' });
+  doc.text('Hyderabad, Telangana | +91 9550379505', pageWidth - 15, 39, { align: 'right' });
+
+  // Divider
+  doc.setDrawColor(226, 232, 240);
+  doc.line(15, 48, pageWidth - 15, 48);
+
+  // Client + meta panel
+  let y = 58;
+  doc.setTextColor(100);
+  doc.setFontSize(9);
+  doc.text('PREPARED FOR', 15, y);
+  doc.text('STATUS', pageWidth / 2, y);
+  doc.text('VALID UNTIL', pageWidth - 15, y, { align: 'right' });
+
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text(proposal.clientName, 15, y + 7);
+  doc.text(proposal.status, pageWidth / 2, y + 7);
+  doc.text(formatDate(proposal.validUntil), pageWidth - 15, y + 7, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(100);
+  doc.text(proposal.clientContact, 15, y + 13);
+  doc.text(`Created ${formatDate(proposal.createdOn)}`, pageWidth / 2, y + 13);
+  doc.text(`Duration: ${proposal.durationDays} days`, pageWidth - 15, y + 13, { align: 'right' });
+
+  // Services table
+  autoTable(doc, {
+    startY: y + 22,
+    head: [['#', 'Service', 'Description', 'Price (₹)']],
+    body: proposal.services.map((s, i) => [
+      (i + 1).toString(),
+      s.name,
+      s.description,
+      formatCurrency(s.price),
+    ]),
+    theme: 'grid',
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 10,
+    },
+    styles: { fontSize: 9, cellPadding: 4 },
+    columnStyles: {
+      0: { cellWidth: 12, halign: 'center' },
+      1: { cellWidth: 45, fontStyle: 'bold' },
+      2: { cellWidth: 'auto' },
+      3: { cellWidth: 35, halign: 'right' },
+    },
+  });
+
+  // Totals
+  const finalY = (doc as any).lastAutoTable.finalY + 8;
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(pageWidth - 90, finalY, 75, 14, 2, 2, 'F');
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('Total', pageWidth - 85, finalY + 9);
+  doc.text(`₹${formatCurrency(proposal.totalPrice)}`, pageWidth - 20, finalY + 9, { align: 'right' });
+
+  // Deliverables
+  let dy = finalY + 25;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Deliverables', 15, dy);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(60);
+  proposal.deliverables.forEach((d, i) => {
+    dy += 6;
+    doc.text(`• ${d}`, 18, dy);
+  });
+
+  // Notes
+  if (proposal.notes) {
+    dy += 12;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Notes', 15, dy);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(80);
+    const lines = doc.splitTextToSize(proposal.notes, pageWidth - 30);
+    doc.text(lines, 15, dy + 6);
+  }
+
+  // Footer
+  doc.setDrawColor(226, 232, 240);
+  doc.line(15, pageHeight - 22, pageWidth - 15, pageHeight - 22);
+  doc.setFontSize(8);
+  doc.setTextColor(120);
+  doc.text('This proposal is confidential. Pricing valid until the date above.', pageWidth / 2, pageHeight - 15, { align: 'center' });
+  doc.text('Digitalness • GSTIN 36AABFK1234A1ZV', pageWidth / 2, pageHeight - 10, { align: 'center' });
+
+  return doc;
 }
