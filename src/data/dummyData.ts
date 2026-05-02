@@ -24,6 +24,12 @@ export interface Employee {
   avatar?: string;
 }
 
+export type LeadScore = 'Hot' | 'Warm' | 'Cold';
+export type LeadTimeline = 'Urgent' | 'Normal' | 'Later';
+export type LeadClarity = 'Clear' | 'Not Clear';
+export type YesNo = 'Yes' | 'No';
+export type LostReason = 'Price' | 'No Response' | 'Competitor' | 'Not Interested' | 'Other';
+
 export interface Lead {
   id: string;
   name: string;
@@ -38,6 +44,27 @@ export interface Lead {
   lastContactDate: string;
   followUpDate?: string;
   city: string;
+  // Phase 1 enhancements
+  branchId?: string;
+  budgetRange?: string;
+  requirementClarity?: LeadClarity;
+  budgetMatch?: YesNo;
+  timeline?: LeadTimeline;
+  decisionMaker?: YesNo;
+  leadScore?: LeadScore;
+  expectedClosingDate?: string;
+  probability?: number;
+  lostReason?: LostReason;
+  nextFollowUpDate?: string;
+  inPipeline?: boolean;
+}
+
+export interface Branch {
+  id: string;
+  name: string;
+  city: string;
+  managerId: string;
+  status: 'Active' | 'Inactive';
 }
 
 export interface Customer {
