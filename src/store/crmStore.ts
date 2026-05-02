@@ -38,6 +38,12 @@ interface CRMState {
   attendance: Attendance[];
   salaryRecords: SalaryRecord[];
   financialRecords: FinancialRecord[];
+  branches: Branch[];
+
+  // Branch Actions
+  addBranch: (branch: Branch) => void;
+  updateBranch: (id: string, data: Partial<Branch>) => void;
+  deleteBranch: (id: string) => void;
 
   // Actions - Auth
   login: (role: UserRole) => void;
