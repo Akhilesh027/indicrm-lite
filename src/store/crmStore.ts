@@ -98,6 +98,13 @@ export const useCRMStore = create<CRMState>()(
       attendance: initialAttendance,
       salaryRecords: initialSalaryRecords,
       financialRecords: initialFinancialRecords,
+      branches: initialBranches,
+
+      addBranch: (branch) => set((s) => ({ branches: [...s.branches, branch] })),
+      updateBranch: (id, data) =>
+        set((s) => ({ branches: s.branches.map((b) => (b.id === id ? { ...b, ...data } : b)) })),
+      deleteBranch: (id) =>
+        set((s) => ({ branches: s.branches.filter((b) => b.id !== id) })),
 
       // Auth Actions
       login: (role) => {
