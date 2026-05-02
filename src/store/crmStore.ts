@@ -9,6 +9,7 @@ import {
   Attendance,
   SalaryRecord,
   FinancialRecord,
+  Branch,
   UserRole,
   employees as initialEmployees,
   leads as initialLeads,
@@ -17,6 +18,7 @@ import {
   attendance as initialAttendance,
   salaryRecords as initialSalaryRecords,
   financialRecords as initialFinancialRecords,
+  branches as initialBranches,
 } from '@/data/dummyData';
 
 interface CRMState {
