@@ -9,6 +9,7 @@ import {
   Attendance,
   SalaryRecord,
   FinancialRecord,
+  Branch,
   UserRole,
   employees as initialEmployees,
   leads as initialLeads,
@@ -17,6 +18,7 @@ import {
   attendance as initialAttendance,
   salaryRecords as initialSalaryRecords,
   financialRecords as initialFinancialRecords,
+  branches as initialBranches,
 } from '@/data/dummyData';
 
 interface CRMState {
@@ -36,6 +38,12 @@ interface CRMState {
   attendance: Attendance[];
   salaryRecords: SalaryRecord[];
   financialRecords: FinancialRecord[];
+  branches: Branch[];
+
+  // Branch Actions
+  addBranch: (branch: Branch) => void;
+  updateBranch: (id: string, data: Partial<Branch>) => void;
+  deleteBranch: (id: string) => void;
 
   // Actions - Auth
   login: (role: UserRole) => void;
@@ -90,6 +98,13 @@ export const useCRMStore = create<CRMState>()(
       attendance: initialAttendance,
       salaryRecords: initialSalaryRecords,
       financialRecords: initialFinancialRecords,
+      branches: initialBranches,
+
+      addBranch: (branch) => set((s) => ({ branches: [...s.branches, branch] })),
+      updateBranch: (id, data) =>
+        set((s) => ({ branches: s.branches.map((b) => (b.id === id ? { ...b, ...data } : b)) })),
+      deleteBranch: (id) =>
+        set((s) => ({ branches: s.branches.filter((b) => b.id !== id) })),
 
       // Auth Actions
       login: (role) => {
@@ -220,7 +235,7 @@ export const useCRMStore = create<CRMState>()(
       },
     }),
     {
-      name: 'digitalness-crm-storage',
+      name: 'digitalness-crm-storage-v2',
     }
   )
 );

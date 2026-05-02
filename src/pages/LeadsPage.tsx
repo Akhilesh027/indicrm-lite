@@ -1,14 +1,18 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Search, Plus, Filter, Phone, MessageSquare, Calendar, ChevronDown,
   Building2, MapPin, Clock, CheckCircle, XCircle, PhoneCall, PhoneOff, UserPlus,
+  Flame, Snowflake, Sun, TrendingUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useCRMStore } from '@/store/crmStore';
-import { Lead } from '@/data/dummyData';
+import { useDealStore } from '@/store/dealStore';
+import { Lead, LeadScore, LeadTimeline, LeadClarity, YesNo } from '@/data/dummyData';
+import { Deal } from '@/data/dealData';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -23,15 +27,31 @@ const statusColors: Record<string, string> = {
   'Own Loss': 'destructive', 'Follow Up': 'warning', 'No Response': 'secondary', 'Call Back': 'pending',
 };
 
+const scoreMeta: Record<LeadScore, { color: string; icon: any }> = {
+  Hot: { color: 'bg-rose-500/10 text-rose-600 border-rose-500/30', icon: Flame },
+  Warm: { color: 'bg-amber-500/10 text-amber-600 border-amber-500/30', icon: Sun },
+  Cold: { color: 'bg-sky-500/10 text-sky-600 border-sky-500/30', icon: Snowflake },
+};
+
 const requirementOptions = [
   'Digital Marketing', 'Website Design', 'App Development', 'Model Video',
   'Promotion Video', 'CRM', 'SEO', 'Other',
 ];
 
+const budgetRanges = ['< ₹10K', '₹10K - ₹25K', '₹25K - ₹50K', '₹50K - ₹1L', '₹1L - ₹3L', '₹3L+'];
+const timelines: LeadTimeline[] = ['Urgent', 'Normal', 'Later'];
+const clarityOptions: LeadClarity[] = ['Clear', 'Not Clear'];
+const yesNoOptions: YesNo[] = ['Yes', 'No'];
+const leadScores: LeadScore[] = ['Hot', 'Warm', 'Cold'];
+
 export default function LeadsPage() {
-  const { leads, addLead, updateLead, convertLeadToCustomer, employees } = useCRMStore();
+  const { leads, addLead, updateLead, convertLeadToCustomer, employees, branches } = useCRMStore();
+  const { addDeal, deals } = useDealStore();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
+  const [scoreFilter, setScoreFilter] = useState<string>('All');
+  const [branchFilter, setBranchFilter] = useState<string>('All');
   const [callPopupLead, setCallPopupLead] = useState<Lead | null>(null);
   const [callNotes, setCallNotes] = useState('');
   const [callStatus, setCallStatus] = useState<Lead['status']>('Follow Up');
@@ -41,6 +61,10 @@ export default function LeadsPage() {
   const [newLead, setNewLead] = useState({
     name: '', contactNumber: '', businessType: '', city: '',
     source: 'Telecaller' as Lead['source'], assignedTo: '', requirements: [] as string[],
+    branchId: 'BR001', budgetRange: '', requirementClarity: 'Not Clear' as LeadClarity,
+    budgetMatch: 'No' as YesNo, timeline: 'Normal' as LeadTimeline,
+    decisionMaker: 'No' as YesNo, leadScore: 'Warm' as LeadScore,
+    expectedClosingDate: '', probability: 30, nextFollowUpDate: '',
   });
   const [selectedRole, setSelectedRole] = useState<string>('');
   const [assignLeadId, setAssignLeadId] = useState<string | null>(null);
@@ -50,11 +74,21 @@ export default function LeadsPage() {
 
   const statuses = ['All', 'New', 'Demo Completed', 'Own Close', 'Own Loss', 'Follow Up', 'No Response', 'Call Back'];
 
+  // Auto-assign branch from city
+  const branchFromCity = (city: string) => {
+    const c = city.toLowerCase();
+    if (c.includes('bangalore') || c.includes('bengaluru')) return 'BR002';
+    if (c.includes('chennai')) return 'BR003';
+    return 'BR001';
+  };
+
   const filteredLeads = leads.filter((lead) => {
     const matchesSearch = lead.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       lead.businessType.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = selectedStatus === 'All' || lead.status === selectedStatus;
-    return matchesSearch && matchesStatus;
+    const matchesScore = scoreFilter === 'All' || lead.leadScore === scoreFilter;
+    const matchesBranch = branchFilter === 'All' || lead.branchId === branchFilter;
+    return matchesSearch && matchesStatus && matchesScore && matchesBranch;
   });
 
   const handleCallPopup = (lead: Lead) => {
@@ -83,18 +117,65 @@ export default function LeadsPage() {
       toast({ title: 'Error', description: 'Please fill name, contact and business type', variant: 'destructive' });
       return;
     }
+    const branchId = newLead.branchId || branchFromCity(newLead.city);
     const lead: Lead = {
       id: `LEAD${Date.now()}`,
       ...newLead,
+      branchId,
       status: 'New',
       notes: [],
       createdOn: new Date().toISOString().split('T')[0],
       lastContactDate: new Date().toISOString().split('T')[0],
+      inPipeline: newLead.leadScore !== 'Cold',
     };
     addLead(lead);
     toast({ title: 'Lead Added', description: `${newLead.name} added successfully` });
     setShowAddModal(false);
-    setNewLead({ name: '', contactNumber: '', businessType: '', city: '', source: 'Telecaller', assignedTo: '', requirements: [] });
+    setNewLead({
+      name: '', contactNumber: '', businessType: '', city: '',
+      source: 'Telecaller', assignedTo: '', requirements: [],
+      branchId: 'BR001', budgetRange: '', requirementClarity: 'Not Clear',
+      budgetMatch: 'No', timeline: 'Normal', decisionMaker: 'No', leadScore: 'Warm',
+      expectedClosingDate: '', probability: 30, nextFollowUpDate: '',
+    });
+  };
+
+  const handlePushToPipeline = (lead: Lead) => {
+    if (lead.leadScore === 'Cold') {
+      toast({ title: 'Cold lead', description: 'Cold leads stay in nurture, not pipeline.', variant: 'destructive' });
+      return;
+    }
+    if (deals.some((d) => d.leadId === lead.id)) {
+      toast({ title: 'Already in pipeline', description: 'A deal exists for this lead.' });
+      navigate('/sales-pipeline');
+      return;
+    }
+    const dealValue = lead.budgetRange?.includes('3L+') ? 300000
+      : lead.budgetRange?.includes('1L - ₹3L') ? 200000
+      : lead.budgetRange?.includes('50K - ₹1L') ? 75000
+      : lead.budgetRange?.includes('25K - ₹50K') ? 35000
+      : lead.budgetRange?.includes('10K - ₹25K') ? 18000 : 50000;
+    const newDeal: Deal = {
+      id: `DEAL${Date.now()}`,
+      leadId: lead.id,
+      title: `${lead.name} - ${lead.requirements.join(', ') || 'Discovery'}`,
+      customerName: lead.name,
+      contactNumber: lead.contactNumber,
+      businessType: lead.businessType,
+      branchId: lead.branchId || 'BR001',
+      stage: 'New',
+      dealValue,
+      probability: lead.probability ?? 50,
+      expectedCloseDate: lead.expectedClosingDate || '',
+      assignedTo: lead.assignedTo,
+      notes: lead.notes.join('\n'),
+      callLogs: [],
+      createdOn: new Date().toISOString().split('T')[0],
+    };
+    addDeal(newDeal);
+    updateLead(lead.id, { inPipeline: true });
+    toast({ title: '✓ Added to Sales Pipeline', description: `Deal created for ${lead.name}` });
+    navigate('/sales-pipeline');
   };
 
   const getEmployeeName = (id: string) => employees.find((e) => e.id === id)?.name || 'Unassigned';
@@ -160,12 +241,26 @@ export default function LeadsPage() {
 
       {/* Search and Filter */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-        className="flex flex-col sm:flex-row gap-4">
+        className="flex flex-col lg:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search leads..." value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
         </div>
+        <Select value={scoreFilter} onValueChange={setScoreFilter}>
+          <SelectTrigger className="w-full lg:w-40"><SelectValue placeholder="Score" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="All">All Scores</SelectItem>
+            {leadScores.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={branchFilter} onValueChange={setBranchFilter}>
+          <SelectTrigger className="w-full lg:w-48"><SelectValue placeholder="Branch" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="All">All Branches</SelectItem>
+            {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <div className="flex gap-2 overflow-x-auto pb-2">
           {statuses.slice(0, 5).map((status) => (
             <Button key={status} variant={selectedStatus === status ? 'default' : 'outline'} size="sm"
@@ -185,10 +280,11 @@ export default function LeadsPage() {
               <tr>
                 <th className="text-left p-4 text-sm font-medium text-muted-foreground">Lead</th>
                 <th className="text-left p-4 text-sm font-medium text-muted-foreground">Business</th>
-                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Source</th>
+                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Score</th>
+                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Branch</th>
                 <th className="text-left p-4 text-sm font-medium text-muted-foreground">Assigned To</th>
                 <th className="text-left p-4 text-sm font-medium text-muted-foreground">Status</th>
-                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Last Contact</th>
+                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Next F/U</th>
                 <th className="text-left p-4 text-sm font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
@@ -213,7 +309,23 @@ export default function LeadsPage() {
                     <div className="flex items-center gap-1 text-sm"><Building2 className="w-4 h-4 text-muted-foreground" /><span>{lead.businessType}</span></div>
                     <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1"><MapPin className="w-3 h-3" />{lead.city}</div>
                   </td>
-                  <td className="p-4"><Badge variant="secondary">{lead.source}</Badge></td>
+                  <td className="p-4">
+                    {lead.leadScore ? (() => {
+                      const m = scoreMeta[lead.leadScore];
+                      const I = m.icon;
+                      return (
+                        <Badge className={m.color} variant="outline">
+                          <I className="w-3 h-3 mr-1" /> {lead.leadScore}
+                        </Badge>
+                      );
+                    })() : <Badge variant="secondary">{lead.source}</Badge>}
+                    {lead.budgetRange && (
+                      <p className="text-[10px] text-muted-foreground mt-1">{lead.budgetRange}</p>
+                    )}
+                  </td>
+                  <td className="p-4">
+                    <p className="text-sm">{branches.find((b) => b.id === lead.branchId)?.name || '—'}</p>
+                  </td>
                   <td className="p-4">
                     <button onClick={() => { setAssignLeadId(lead.id); setAssignRole(''); setAssignEmployeeId(''); }}
                       className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer underline-offset-2 hover:underline">
@@ -224,17 +336,19 @@ export default function LeadsPage() {
                   <td className="p-4">
                     <div className="flex items-center gap-1 text-sm text-muted-foreground">
                       <Clock className="w-4 h-4" />
-                      {new Date(lead.lastContactDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      {lead.nextFollowUpDate
+                        ? new Date(lead.nextFollowUpDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                        : new Date(lead.lastContactDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                     </div>
                   </td>
                   <td className="p-4">
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => handleCallPopup(lead)} className="text-accent hover:text-accent">
+                      <Button variant="ghost" size="icon" onClick={() => handleCallPopup(lead)} className="text-accent hover:text-accent" title="Log Call">
                         <PhoneCall className="w-4 h-4" />
                       </Button>
                       <Button variant="ghost" size="icon"
                         onClick={() => window.open(`https://wa.me/91${lead.contactNumber}`, '_blank')}
-                        className="text-success hover:text-success">
+                        className="text-success hover:text-success" title="WhatsApp">
                         <MessageSquare className="w-4 h-4" />
                       </Button>
                       <Button variant="ghost" size="icon"
@@ -242,7 +356,13 @@ export default function LeadsPage() {
                         className="text-primary hover:text-primary" title="Assign Lead">
                         <UserPlus className="w-4 h-4" />
                       </Button>
-                      <Button variant="ghost" size="icon"><Calendar className="w-4 h-4" /></Button>
+                      {lead.leadScore !== 'Cold' && (
+                        <Button variant="ghost" size="icon"
+                          onClick={() => handlePushToPipeline(lead)}
+                          className="text-warning hover:text-warning" title="Add to Sales Pipeline">
+                          <TrendingUp className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </motion.tr>
@@ -357,6 +477,94 @@ export default function LeadsPage() {
                 </Select>
               </div>
               <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Branch</label>
+                <Select value={newLead.branchId} onValueChange={(v) => setNewLead({ ...newLead, branchId: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Lead Score</label>
+                <Select value={newLead.leadScore} onValueChange={(v: LeadScore) => setNewLead({ ...newLead, leadScore: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {leadScores.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Budget Range</label>
+                <Select value={newLead.budgetRange} onValueChange={(v) => setNewLead({ ...newLead, budgetRange: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectContent>
+                    {budgetRanges.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Requirement Clarity</label>
+                <Select value={newLead.requirementClarity} onValueChange={(v: LeadClarity) => setNewLead({ ...newLead, requirementClarity: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {clarityOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Timeline</label>
+                <Select value={newLead.timeline} onValueChange={(v: LeadTimeline) => setNewLead({ ...newLead, timeline: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {timelines.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Budget Match</label>
+                <Select value={newLead.budgetMatch} onValueChange={(v: YesNo) => setNewLead({ ...newLead, budgetMatch: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {yesNoOptions.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Decision Maker</label>
+                <Select value={newLead.decisionMaker} onValueChange={(v: YesNo) => setNewLead({ ...newLead, decisionMaker: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {yesNoOptions.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Probability %</label>
+                <Input type="number" min={0} max={100} value={newLead.probability}
+                  onChange={(e) => setNewLead({ ...newLead, probability: Number(e.target.value) })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Expected Close</label>
+                <Input type="date" value={newLead.expectedClosingDate}
+                  onChange={(e) => setNewLead({ ...newLead, expectedClosingDate: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Next Follow-up</label>
+                <Input type="date" value={newLead.nextFollowUpDate}
+                  onChange={(e) => setNewLead({ ...newLead, nextFollowUpDate: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
                 <label className="text-sm font-medium text-foreground mb-1 block">Select Role</label>
                 <Select value={selectedRole} onValueChange={(v) => { setSelectedRole(v); setNewLead({ ...newLead, assignedTo: '' }); }}>
                   <SelectTrigger><SelectValue placeholder="Choose role first" /></SelectTrigger>
@@ -365,18 +573,20 @@ export default function LeadsPage() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            {selectedRole && (
               <div>
-                <label className="text-sm font-medium text-foreground mb-1 block">Assign To ({selectedRole})</label>
-                <Select value={newLead.assignedTo} onValueChange={(v) => setNewLead({ ...newLead, assignedTo: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                  <SelectContent>
-                    {employeesByRole(selectedRole).map((e) => (<SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>))}
-                  </SelectContent>
-                </Select>
+                {selectedRole && (
+                  <>
+                    <label className="text-sm font-medium text-foreground mb-1 block">Assign To</label>
+                    <Select value={newLead.assignedTo} onValueChange={(v) => setNewLead({ ...newLead, assignedTo: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+                      <SelectContent>
+                        {employeesByRole(selectedRole).map((e) => (<SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>))}
+                      </SelectContent>
+                    </Select>
+                  </>
+                )}
               </div>
-            )}
+            </div>
             <div>
               <label className="text-sm font-medium text-foreground mb-2 block">Requirements</label>
               <div className="grid grid-cols-2 gap-2">
