@@ -19,6 +19,8 @@ import {
   PackageCheck,
   CreditCard,
   Eye,
+  TrendingUp,
+  FileSignature,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCRMStore } from '@/store/crmStore';
@@ -35,6 +37,8 @@ const navItems: NavItem[] = [
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['Admin', 'Manager', 'Telecaller', 'Sales Executive', 'Employee', 'Accountant'] },
   { label: 'Employees', path: '/employees', icon: Users, roles: ['Admin', 'Manager'] },
   { label: 'Leads', path: '/leads', icon: Target, roles: ['Admin', 'Manager', 'Telecaller', 'Sales Executive'] },
+  { label: 'Sales Pipeline', path: '/sales-pipeline', icon: TrendingUp, roles: ['Admin', 'Manager', 'Sales Executive'] },
+  { label: 'Proposals', path: '/proposals', icon: FileSignature, roles: ['Admin', 'Manager', 'Sales Executive'] },
   { label: 'Customers', path: '/customers', icon: Building2, roles: ['Admin', 'Manager', 'Sales Executive', 'Customer'] },
   { label: 'Works', path: '/works', icon: ClipboardList, roles: ['Admin', 'Manager', 'Employee'] },
   { label: 'Deliverables', path: '/deliverables', icon: PackageCheck, roles: ['Admin', 'Manager', 'Employee'] },
