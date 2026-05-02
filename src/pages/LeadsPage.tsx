@@ -1,14 +1,18 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Search, Plus, Filter, Phone, MessageSquare, Calendar, ChevronDown,
   Building2, MapPin, Clock, CheckCircle, XCircle, PhoneCall, PhoneOff, UserPlus,
+  Flame, Snowflake, Sun, TrendingUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useCRMStore } from '@/store/crmStore';
-import { Lead } from '@/data/dummyData';
+import { useDealStore } from '@/store/dealStore';
+import { Lead, LeadScore, LeadTimeline, LeadClarity, YesNo } from '@/data/dummyData';
+import { Deal } from '@/data/dealData';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -23,15 +27,31 @@ const statusColors: Record<string, string> = {
   'Own Loss': 'destructive', 'Follow Up': 'warning', 'No Response': 'secondary', 'Call Back': 'pending',
 };
 
+const scoreMeta: Record<LeadScore, { color: string; icon: any }> = {
+  Hot: { color: 'bg-rose-500/10 text-rose-600 border-rose-500/30', icon: Flame },
+  Warm: { color: 'bg-amber-500/10 text-amber-600 border-amber-500/30', icon: Sun },
+  Cold: { color: 'bg-sky-500/10 text-sky-600 border-sky-500/30', icon: Snowflake },
+};
+
 const requirementOptions = [
   'Digital Marketing', 'Website Design', 'App Development', 'Model Video',
   'Promotion Video', 'CRM', 'SEO', 'Other',
 ];
 
+const budgetRanges = ['< ₹10K', '₹10K - ₹25K', '₹25K - ₹50K', '₹50K - ₹1L', '₹1L - ₹3L', '₹3L+'];
+const timelines: LeadTimeline[] = ['Urgent', 'Normal', 'Later'];
+const clarityOptions: LeadClarity[] = ['Clear', 'Not Clear'];
+const yesNoOptions: YesNo[] = ['Yes', 'No'];
+const leadScores: LeadScore[] = ['Hot', 'Warm', 'Cold'];
+
 export default function LeadsPage() {
-  const { leads, addLead, updateLead, convertLeadToCustomer, employees } = useCRMStore();
+  const { leads, addLead, updateLead, convertLeadToCustomer, employees, branches } = useCRMStore();
+  const { addDeal, deals } = useDealStore();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
+  const [scoreFilter, setScoreFilter] = useState<string>('All');
+  const [branchFilter, setBranchFilter] = useState<string>('All');
   const [callPopupLead, setCallPopupLead] = useState<Lead | null>(null);
   const [callNotes, setCallNotes] = useState('');
   const [callStatus, setCallStatus] = useState<Lead['status']>('Follow Up');
@@ -41,6 +61,10 @@ export default function LeadsPage() {
   const [newLead, setNewLead] = useState({
     name: '', contactNumber: '', businessType: '', city: '',
     source: 'Telecaller' as Lead['source'], assignedTo: '', requirements: [] as string[],
+    branchId: 'BR001', budgetRange: '', requirementClarity: 'Not Clear' as LeadClarity,
+    budgetMatch: 'No' as YesNo, timeline: 'Normal' as LeadTimeline,
+    decisionMaker: 'No' as YesNo, leadScore: 'Warm' as LeadScore,
+    expectedClosingDate: '', probability: 30, nextFollowUpDate: '',
   });
   const [selectedRole, setSelectedRole] = useState<string>('');
   const [assignLeadId, setAssignLeadId] = useState<string | null>(null);
@@ -50,11 +74,21 @@ export default function LeadsPage() {
 
   const statuses = ['All', 'New', 'Demo Completed', 'Own Close', 'Own Loss', 'Follow Up', 'No Response', 'Call Back'];
 
+  // Auto-assign branch from city
+  const branchFromCity = (city: string) => {
+    const c = city.toLowerCase();
+    if (c.includes('bangalore') || c.includes('bengaluru')) return 'BR002';
+    if (c.includes('chennai')) return 'BR003';
+    return 'BR001';
+  };
+
   const filteredLeads = leads.filter((lead) => {
     const matchesSearch = lead.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       lead.businessType.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = selectedStatus === 'All' || lead.status === selectedStatus;
-    return matchesSearch && matchesStatus;
+    const matchesScore = scoreFilter === 'All' || lead.leadScore === scoreFilter;
+    const matchesBranch = branchFilter === 'All' || lead.branchId === branchFilter;
+    return matchesSearch && matchesStatus && matchesScore && matchesBranch;
   });
 
   const handleCallPopup = (lead: Lead) => {
