@@ -280,10 +280,11 @@ export default function LeadsPage() {
               <tr>
                 <th className="text-left p-4 text-sm font-medium text-muted-foreground">Lead</th>
                 <th className="text-left p-4 text-sm font-medium text-muted-foreground">Business</th>
-                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Source</th>
+                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Score</th>
+                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Branch</th>
                 <th className="text-left p-4 text-sm font-medium text-muted-foreground">Assigned To</th>
                 <th className="text-left p-4 text-sm font-medium text-muted-foreground">Status</th>
-                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Last Contact</th>
+                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Next F/U</th>
                 <th className="text-left p-4 text-sm font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
