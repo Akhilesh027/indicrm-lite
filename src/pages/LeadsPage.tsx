@@ -241,12 +241,26 @@ export default function LeadsPage() {
 
       {/* Search and Filter */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-        className="flex flex-col sm:flex-row gap-4">
+        className="flex flex-col lg:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search leads..." value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
         </div>
+        <Select value={scoreFilter} onValueChange={setScoreFilter}>
+          <SelectTrigger className="w-full lg:w-40"><SelectValue placeholder="Score" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="All">All Scores</SelectItem>
+            {leadScores.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={branchFilter} onValueChange={setBranchFilter}>
+          <SelectTrigger className="w-full lg:w-48"><SelectValue placeholder="Branch" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="All">All Branches</SelectItem>
+            {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <div className="flex gap-2 overflow-x-auto pb-2">
           {statuses.slice(0, 5).map((status) => (
             <Button key={status} variant={selectedStatus === status ? 'default' : 'outline'} size="sm"
