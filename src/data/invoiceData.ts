@@ -15,6 +15,16 @@ export interface Invoice {
   dueDate: string;
   paidAmount: number;
   notes?: string;
+  // Phase 2 billing extensions
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  isInterState?: boolean;
+  isRecurring?: boolean;
+  recurringFrequency?: 'Monthly' | 'Quarterly' | 'Yearly';
+  paymentTerms?: string;
+  poNumber?: string;
+  branchId?: string;
 }
 
 export interface InvoiceItem {
