@@ -21,6 +21,9 @@ import {
   Eye,
   TrendingUp,
   FileSignature,
+  GitBranch,
+  FileBox,
+  LifeBuoy,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCRMStore } from '@/store/crmStore';
@@ -48,6 +51,9 @@ const navItems: NavItem[] = [
   { label: 'Telecaller', path: '/telecaller', icon: Phone, roles: ['Admin', 'Manager', 'Telecaller'] },
   { label: 'Accounts', path: '/accounts', icon: Wallet, roles: ['Admin', 'Accountant'] },
   { label: 'Reports', path: '/reports', icon: BarChart3, roles: ['Admin', 'Manager', 'Accountant'] },
+  { label: 'Tickets', path: '/tickets', icon: LifeBuoy, roles: ['Admin', 'Manager', 'Employee', 'Customer'] },
+  { label: 'Templates', path: '/templates', icon: FileBox, roles: ['Admin', 'Manager'] },
+  { label: 'Branches', path: '/branches', icon: GitBranch, roles: ['Admin'] },
   { label: 'Employee Report', path: '/employee-report', icon: Users, roles: ['Admin', 'Manager'] },
 ];
 

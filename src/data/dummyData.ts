@@ -22,6 +22,15 @@ export interface Employee {
     avgTurnaround: number;
   };
   avatar?: string;
+  // Phase 2
+  branchId?: string;
+  emergencyContact?: string;
+  bloodGroup?: string;
+  skills?: string[];
+  reportingTo?: string;
+  employeeType?: 'Full-Time' | 'Part-Time' | 'Contract' | 'Intern';
+  panNumber?: string;
+  aadhaarNumber?: string;
 }
 
 export type LeadScore = 'Hot' | 'Warm' | 'Cold';
@@ -81,6 +90,45 @@ export interface Customer {
   totalPaid: number;
   totalPending: number;
   createdOn: string;
+  // Phase 2
+  branchId?: string;
+  gstin?: string;
+  panNumber?: string;
+  industry?: string;
+  companySize?: 'Small' | 'Medium' | 'Large' | 'Enterprise';
+  website?: string;
+  pointOfContact?: string;
+  designation?: string;
+  contractStartDate?: string;
+  contractEndDate?: string;
+  monthlyRetainer?: number;
+  accountManagerId?: string;
+  status?: 'Active' | 'Paused' | 'Churned';
+  notes?: string;
+}
+
+export interface ProjectTemplate {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  defaultDeliverables: { title: string; category: string; days: number }[];
+  estimatedDays: number;
+  estimatedCost: number;
+}
+
+export interface SupportTicket {
+  id: string;
+  customerId: string;
+  customerName: string;
+  subject: string;
+  description: string;
+  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  status: 'Open' | 'In Progress' | 'Resolved' | 'Closed';
+  assignedTo?: string;
+  createdOn: string;
+  updatedOn: string;
+  category: 'Bug' | 'Feature Request' | 'Question' | 'Complaint' | 'Other';
 }
 
 export interface Project {
@@ -96,6 +144,11 @@ export interface Project {
   description: string;
   deliverables: number;
   completedDeliverables: number;
+  // Phase 2
+  templateId?: string;
+  branchId?: string;
+  budget?: number;
+  startDate?: string;
 }
 
 export interface Task {

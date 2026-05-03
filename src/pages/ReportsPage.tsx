@@ -1,13 +1,17 @@
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   BarChart3,
   Users,
   Target,
   TrendingUp,
-  Calendar,
   Download,
+  Filter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCRMStore } from '@/store/crmStore';
 import { monthlyRevenueData, leadStatusDistribution, employeesByDepartment } from '@/data/dummyData';
 import {
@@ -27,7 +31,27 @@ import {
 } from 'recharts';
 
 export default function ReportsPage() {
-  const { employees, leads, customers, projects } = useCRMStore();
+  const { employees, leads, customers, projects, branches } = useCRMStore();
+
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [branchId, setBranchId] = useState<string>('all');
+  const [customerId, setCustomerId] = useState<string>('all');
+
+  const filteredLeads = useMemo(() => leads.filter((l) => {
+    if (branchId !== 'all' && l.branchId !== branchId) return false;
+    if (fromDate && l.createdOn < fromDate) return false;
+    if (toDate && l.createdOn > toDate) return false;
+    return true;
+  }), [leads, branchId, fromDate, toDate]);
+
+  const filteredProjects = useMemo(() => projects.filter((p) => {
+    if (customerId !== 'all' && p.customerId !== customerId) return false;
+    if (fromDate && p.createdOn < fromDate) return false;
+    if (toDate && p.createdOn > toDate) return false;
+    return true;
+  }), [projects, customerId, fromDate, toDate]);
+
 
   const formatCurrency = (amount: number) => {
     if (amount >= 100000) {
@@ -68,14 +92,45 @@ export default function ReportsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
-            <Calendar className="w-4 h-4 mr-2" />
-            Filter by Date
-          </Button>
           <Button variant="gradient">
             <Download className="w-4 h-4 mr-2" />
             Export Report
           </Button>
+        </div>
+      </motion.div>
+
+      {/* Filters */}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-card border border-border rounded-xl p-4 grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="col-span-2 md:col-span-1 flex items-center gap-2 text-sm font-medium">
+          <Filter className="w-4 h-4 text-primary" /> Filters
+        </div>
+        <div>
+          <Label className="text-xs">From</Label>
+          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+        </div>
+        <div>
+          <Label className="text-xs">To</Label>
+          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+        </div>
+        <div>
+          <Label className="text-xs">Branch</Label>
+          <Select value={branchId} onValueChange={setBranchId}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Branches</SelectItem>
+              {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">Customer</Label>
+          <Select value={customerId} onValueChange={setCustomerId}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Customers</SelectItem>
+              {customers.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
       </motion.div>
 
@@ -98,7 +153,7 @@ export default function ReportsPage() {
             <Target className="w-5 h-5 text-accent" />
             <span className="text-sm text-muted-foreground">Total Leads</span>
           </div>
-          <p className="text-3xl font-heading font-bold text-foreground">{leads.length}</p>
+          <p className="text-3xl font-heading font-bold text-foreground">{filteredLeads.length}</p>
         </div>
         <div className="p-5 rounded-xl bg-card border border-border shadow-card">
           <div className="flex items-center gap-2 mb-2">
@@ -106,7 +161,7 @@ export default function ReportsPage() {
             <span className="text-sm text-muted-foreground">Conversion Rate</span>
           </div>
           <p className="text-3xl font-heading font-bold text-success">
-            {Math.round((leads.filter((l) => l.status === 'Own Close').length / leads.length) * 100)}%
+            {filteredLeads.length === 0 ? 0 : Math.round((filteredLeads.filter((l) => l.status === 'Own Close').length / filteredLeads.length) * 100)}%
           </p>
         </div>
         <div className="p-5 rounded-xl bg-card border border-border shadow-card">
@@ -115,7 +170,7 @@ export default function ReportsPage() {
             <span className="text-sm text-muted-foreground">Active Projects</span>
           </div>
           <p className="text-3xl font-heading font-bold text-foreground">
-            {projects.filter((p) => p.status !== 'Completed').length}
+            {filteredProjects.filter((p) => p.status !== 'Completed').length}
           </p>
         </div>
       </motion.div>

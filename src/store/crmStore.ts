@@ -235,7 +235,7 @@ export const useCRMStore = create<CRMState>()(
       },
     }),
     {
-      name: 'digitalness-crm-storage-v2',
+      name: 'digitalness-crm-storage-v3',
     }
   )
 );

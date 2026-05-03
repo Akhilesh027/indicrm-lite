@@ -21,6 +21,9 @@ import ClientPortalPage from "./pages/ClientPortalPage";
 import EmployeeReportPage from "./pages/EmployeeReportPage";
 import SalesPipelinePage from "./pages/SalesPipelinePage";
 import ProposalsPage from "./pages/ProposalsPage";
+import BranchesPage from "./pages/BranchesPage";
+import TemplatesPage from "./pages/TemplatesPage";
+import TicketsPage from "./pages/TicketsPage";
 
 const queryClient = new QueryClient();
 
@@ -48,6 +51,9 @@ const App = () => (
             <Route path="/employee-report" element={<EmployeeReportPage />} />
             <Route path="/sales-pipeline" element={<SalesPipelinePage />} />
             <Route path="/proposals" element={<ProposalsPage />} />
+            <Route path="/branches" element={<BranchesPage />} />
+            <Route path="/templates" element={<TemplatesPage />} />
+            <Route path="/tickets" element={<TicketsPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
