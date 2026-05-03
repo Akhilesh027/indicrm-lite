@@ -1,13 +1,17 @@
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   BarChart3,
   Users,
   Target,
   TrendingUp,
-  Calendar,
   Download,
+  Filter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCRMStore } from '@/store/crmStore';
 import { monthlyRevenueData, leadStatusDistribution, employeesByDepartment } from '@/data/dummyData';
 import {
@@ -27,7 +31,27 @@ import {
 } from 'recharts';
 
 export default function ReportsPage() {
-  const { employees, leads, customers, projects } = useCRMStore();
+  const { employees, leads, customers, projects, branches } = useCRMStore();
+
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [branchId, setBranchId] = useState<string>('all');
+  const [customerId, setCustomerId] = useState<string>('all');
+
+  const filteredLeads = useMemo(() => leads.filter((l) => {
+    if (branchId !== 'all' && l.branchId !== branchId) return false;
+    if (fromDate && l.createdOn < fromDate) return false;
+    if (toDate && l.createdOn > toDate) return false;
+    return true;
+  }), [leads, branchId, fromDate, toDate]);
+
+  const filteredProjects = useMemo(() => projects.filter((p) => {
+    if (customerId !== 'all' && p.customerId !== customerId) return false;
+    if (fromDate && p.createdOn < fromDate) return false;
+    if (toDate && p.createdOn > toDate) return false;
+    return true;
+  }), [projects, customerId, fromDate, toDate]);
+
 
   const formatCurrency = (amount: number) => {
     if (amount >= 100000) {
