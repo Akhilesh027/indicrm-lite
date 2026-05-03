@@ -153,7 +153,7 @@ export default function ReportsPage() {
             <Target className="w-5 h-5 text-accent" />
             <span className="text-sm text-muted-foreground">Total Leads</span>
           </div>
-          <p className="text-3xl font-heading font-bold text-foreground">{leads.length}</p>
+          <p className="text-3xl font-heading font-bold text-foreground">{filteredLeads.length}</p>
         </div>
         <div className="p-5 rounded-xl bg-card border border-border shadow-card">
           <div className="flex items-center gap-2 mb-2">
@@ -161,7 +161,7 @@ export default function ReportsPage() {
             <span className="text-sm text-muted-foreground">Conversion Rate</span>
           </div>
           <p className="text-3xl font-heading font-bold text-success">
-            {Math.round((leads.filter((l) => l.status === 'Own Close').length / leads.length) * 100)}%
+            {filteredLeads.length === 0 ? 0 : Math.round((filteredLeads.filter((l) => l.status === 'Own Close').length / filteredLeads.length) * 100)}%
           </p>
         </div>
         <div className="p-5 rounded-xl bg-card border border-border shadow-card">
@@ -170,7 +170,7 @@ export default function ReportsPage() {
             <span className="text-sm text-muted-foreground">Active Projects</span>
           </div>
           <p className="text-3xl font-heading font-bold text-foreground">
-            {projects.filter((p) => p.status !== 'Completed').length}
+            {filteredProjects.filter((p) => p.status !== 'Completed').length}
           </p>
         </div>
       </motion.div>
