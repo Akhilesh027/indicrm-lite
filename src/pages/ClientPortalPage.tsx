@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useInvoiceStore } from '@/store/invoiceStore';
 import { useCRMStore } from '@/store/crmStore';
+import { useTaskStore } from '@/store/taskStore';
 import { generateWorkReportPDF } from '@/utils/pdfGenerator';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -35,6 +36,7 @@ const NAV: { key: Section; label: string; icon: typeof LayoutDashboard }[] = [
 export default function ClientPortalPage() {
   const { deliverables, invoices, paymentRecords } = useInvoiceStore();
   const { customers, employees, projects, currentUser } = useCRMStore();
+  const { tasks } = useTaskStore();
   const { toast } = useToast();
 
   const isCustomerRole = currentUser?.role === 'Customer';
