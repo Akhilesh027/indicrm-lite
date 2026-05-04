@@ -24,6 +24,7 @@ import ProposalsPage from "./pages/ProposalsPage";
 import BranchesPage from "./pages/BranchesPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import TicketsPage from "./pages/TicketsPage";
+import TasksPage from "./pages/TasksPage";
 
 const queryClient = new QueryClient();
 
@@ -54,6 +55,7 @@ const App = () => (
             <Route path="/branches" element={<BranchesPage />} />
             <Route path="/templates" element={<TemplatesPage />} />
             <Route path="/tickets" element={<TicketsPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

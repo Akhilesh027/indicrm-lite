@@ -24,6 +24,7 @@ import {
   GitBranch,
   FileBox,
   LifeBuoy,
+  ListChecks,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCRMStore } from '@/store/crmStore';
@@ -45,6 +46,7 @@ const navItems: NavItem[] = [
   { label: 'Customers', path: '/customers', icon: Building2, roles: ['Admin', 'Manager', 'Sales Executive', 'Customer'] },
   { label: 'Works', path: '/works', icon: ClipboardList, roles: ['Admin', 'Manager', 'Employee'] },
   { label: 'Deliverables', path: '/deliverables', icon: PackageCheck, roles: ['Admin', 'Manager', 'Employee'] },
+  { label: 'Tasks', path: '/tasks', icon: ListChecks, roles: ['Admin', 'Manager', 'Employee'] },
   { label: 'Invoices', path: '/invoices', icon: FileText, roles: ['Admin', 'Manager', 'Accountant'] },
   { label: 'Payments', path: '/payments', icon: CreditCard, roles: ['Admin', 'Manager', 'Accountant'] },
   { label: 'Client Portal', path: '/client-portal', icon: Eye, roles: ['Admin', 'Manager', 'Customer'] },
