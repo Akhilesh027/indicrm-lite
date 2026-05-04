@@ -192,6 +192,23 @@ export default function ClientPortalPage() {
                 </div>
               </div>
 
+              {(() => {
+                const cTasks = tasks.filter((t) => t.customerId === selectedCustomerId);
+                const cDone = cTasks.filter((t) => t.status === 'Completed').length;
+                const cPct = cTasks.length ? Math.round((cDone / cTasks.length) * 100) : 0;
+                if (cTasks.length === 0) return null;
+                return (
+                  <div className="p-5 rounded-xl bg-card border border-border shadow-card">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-heading font-bold">Task Progress</h3>
+                      <span className="text-2xl font-bold text-success">{cPct}%</span>
+                    </div>
+                    <Progress value={cPct} className="h-4" />
+                    <p className="text-xs text-muted-foreground mt-2">{cDone}/{cTasks.length} tasks completed across your projects</p>
+                  </div>
+                );
+              })()}
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="p-5 rounded-xl bg-card border border-border shadow-card">
                   <h3 className="font-heading font-bold mb-4">Work Status Distribution</h3>
