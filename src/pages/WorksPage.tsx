@@ -17,6 +17,8 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
+import { useTemplateStore } from '@/store/templateStore';
+import { useTaskStore, tasksFromTemplate, tasksFromProjectType } from '@/store/taskStore';
 
 const statusColors: Record<string, string> = {
   'Not Started': 'secondary', 'In Progress': 'inProgress', 'Review': 'info', 'Completed': 'completed', 'Failed': 'failed',
@@ -28,6 +30,8 @@ const priorityColors: Record<string, string> = {
 
 export default function WorksPage() {
   const { projects, addProject, updateProject, employees, customers } = useCRMStore();
+  const { templates } = useTemplateStore();
+  const { addTasks } = useTaskStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
@@ -35,6 +39,7 @@ export default function WorksPage() {
   const [newProject, setNewProject] = useState({
     title: '', type: '', customerId: '', priority: 'Medium' as Project['priority'],
     dueDate: '', description: '', deliverables: 1, assignedTo: [] as string[],
+    templateId: '',
   });
   const { toast } = useToast();
 
@@ -66,9 +71,11 @@ export default function WorksPage() {
       toast({ title: 'Error', description: 'Please fill title, customer and type', variant: 'destructive' });
       return;
     }
+    const projectId = `PROJ${Date.now()}`;
     const project: Project = {
-      id: `PROJ${Date.now()}`,
+      id: projectId,
       ...newProject,
+      templateId: newProject.templateId || undefined,
       status: 'Not Started',
       deliverables: Number(newProject.deliverables),
       completedDeliverables: 0,
@@ -76,9 +83,22 @@ export default function WorksPage() {
       dueDate: newProject.dueDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
     };
     addProject(project);
-    toast({ title: 'Work Created', description: `${newProject.title} created successfully` });
+
+    // Auto-generate tasks from template (if any) else from project type playbook
+    const owner = newProject.assignedTo[0];
+    const tpl = templates.find((t) => t.id === newProject.templateId);
+    const auto = tpl
+      ? tasksFromTemplate(tpl, projectId, newProject.customerId, owner)
+      : tasksFromProjectType(newProject.type, projectId, newProject.customerId, owner);
+    if (auto.length) {
+      addTasks(auto);
+      toast({ title: 'Work Created', description: `${newProject.title} • ${auto.length} tasks auto-generated` });
+    } else {
+      toast({ title: 'Work Created', description: newProject.title });
+    }
+
     setShowAddModal(false);
-    setNewProject({ title: '', type: '', customerId: '', priority: 'Medium', dueDate: '', description: '', deliverables: 1, assignedTo: [] });
+    setNewProject({ title: '', type: '', customerId: '', priority: 'Medium', dueDate: '', description: '', deliverables: 1, assignedTo: [], templateId: '' });
   };
 
   return (
