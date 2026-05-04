@@ -17,6 +17,7 @@ import {
 import { useCRMStore } from '@/store/crmStore';
 import { useDealStore } from '@/store/dealStore';
 import { useInvoiceStore } from '@/store/invoiceStore';
+import { useTaskStore, tasksFromProjectType } from '@/store/taskStore';
 import { Deal, DealStage, DEAL_STAGES } from '@/data/dealData';
 import { Customer } from '@/data/dummyData';
 import { Invoice } from '@/data/invoiceData';
@@ -39,6 +40,7 @@ export default function SalesPipelinePage() {
   const { deals, addDeal, updateDeal, moveDealStage, addCallLog } = useDealStore();
   const { leads, employees, branches, customers, addCustomer, addProject, currentUser } = useCRMStore();
   const { addInvoice } = useInvoiceStore();
+  const { addTasks } = useTaskStore();
   const { toast } = useToast();
 
   const [search, setSearch] = useState('');
@@ -148,6 +150,10 @@ export default function SalesPipelinePage() {
       deliverables: 0,
       completedDeliverables: 0,
     });
+
+    // 2b. Auto-generate playbook tasks for the new project
+    const autoTasks = tasksFromProjectType('Digital Marketing', projectId, customerId, deal.assignedTo);
+    if (autoTasks.length) addTasks(autoTasks);
 
     // 3. Draft invoice
     const invoiceId = `INV${Date.now()}`;

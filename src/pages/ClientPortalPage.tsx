@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useInvoiceStore } from '@/store/invoiceStore';
 import { useCRMStore } from '@/store/crmStore';
+import { useTaskStore } from '@/store/taskStore';
 import { generateWorkReportPDF } from '@/utils/pdfGenerator';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -35,6 +36,7 @@ const NAV: { key: Section; label: string; icon: typeof LayoutDashboard }[] = [
 export default function ClientPortalPage() {
   const { deliverables, invoices, paymentRecords } = useInvoiceStore();
   const { customers, employees, projects, currentUser } = useCRMStore();
+  const { tasks } = useTaskStore();
   const { toast } = useToast();
 
   const isCustomerRole = currentUser?.role === 'Customer';
@@ -189,6 +191,23 @@ export default function ClientPortalPage() {
                   <span>{pendingDels} pending</span>
                 </div>
               </div>
+
+              {(() => {
+                const cTasks = tasks.filter((t) => t.customerId === selectedCustomerId);
+                const cDone = cTasks.filter((t) => t.status === 'Completed').length;
+                const cPct = cTasks.length ? Math.round((cDone / cTasks.length) * 100) : 0;
+                if (cTasks.length === 0) return null;
+                return (
+                  <div className="p-5 rounded-xl bg-card border border-border shadow-card">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-heading font-bold">Task Progress</h3>
+                      <span className="text-2xl font-bold text-success">{cPct}%</span>
+                    </div>
+                    <Progress value={cPct} className="h-4" />
+                    <p className="text-xs text-muted-foreground mt-2">{cDone}/{cTasks.length} tasks completed across your projects</p>
+                  </div>
+                );
+              })()}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="p-5 rounded-xl bg-card border border-border shadow-card">

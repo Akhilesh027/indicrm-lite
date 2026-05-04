@@ -21,6 +21,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { computeLeadScore } from '@/lib/leadScoring';
+import { ActivityTimeline } from '@/components/ActivityTimeline';
 
 const statusColors: Record<string, string> = {
   'New': 'new', 'Demo Completed': 'info', 'Own Close': 'success',
@@ -118,15 +120,17 @@ export default function LeadsPage() {
       return;
     }
     const branchId = newLead.branchId || branchFromCity(newLead.city);
+    const autoScore = computeLeadScore(newLead);
     const lead: Lead = {
       id: `LEAD${Date.now()}`,
       ...newLead,
       branchId,
+      leadScore: autoScore,
       status: 'New',
       notes: [],
       createdOn: new Date().toISOString().split('T')[0],
       lastContactDate: new Date().toISOString().split('T')[0],
-      inPipeline: newLead.leadScore !== 'Cold',
+      inPipeline: autoScore !== 'Cold',
     };
     addLead(lead);
     toast({ title: 'Lead Added', description: `${newLead.name} added successfully` });
@@ -429,6 +433,9 @@ export default function LeadsPage() {
                   <Input type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
                 </div>
               )}
+              <div className="border-t border-border pt-3">
+                <ActivityTimeline relation="lead" relatedId={callPopupLead.id} compact />
+              </div>
               <div className="flex gap-2 pt-4">
                 <Button variant="outline" onClick={() => setCallPopupLead(null)} className="flex-1">Cancel</Button>
                 <Button variant="gradient" onClick={handleSaveCall} className="flex-1">Save Call Log</Button>
