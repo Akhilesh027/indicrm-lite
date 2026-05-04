@@ -307,6 +307,17 @@ export default function WorksPage() {
               </div>
             </div>
             <div>
+              <label className="text-sm font-medium text-foreground mb-1 block">Use Template (optional)</label>
+              <Select value={newProject.templateId || 'none'} onValueChange={(v) => setNewProject({ ...newProject, templateId: v === 'none' ? '' : v })}>
+                <SelectTrigger><SelectValue placeholder="No template" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No template (use type playbook)</SelectItem>
+                  {templates.map((t) => (<SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Tasks will be auto-generated from template or project type.</p>
+            </div>
+            <div>
               <label className="text-sm font-medium text-foreground mb-1 block">Total Deliverables</label>
               <Input type="number" min={1} value={newProject.deliverables} onChange={(e) => setNewProject({ ...newProject, deliverables: parseInt(e.target.value) || 1 })} />
             </div>
