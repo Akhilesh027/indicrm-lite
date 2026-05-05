@@ -43,7 +43,7 @@ const navItems: NavItem[] = [
   { label: 'Leads', path: '/leads', icon: Target, roles: ['Admin', 'Manager', 'Telecaller', 'Sales Executive'] },
   { label: 'Sales Pipeline', path: '/sales-pipeline', icon: TrendingUp, roles: ['Admin', 'Manager', 'Sales Executive'] },
   { label: 'Proposals', path: '/proposals', icon: FileSignature, roles: ['Admin', 'Manager', 'Sales Executive'] },
-  { label: 'Customers', path: '/customers', icon: Building2, roles: ['Admin', 'Manager', 'Sales Executive', 'Customer'] },
+  { label: 'Customers', path: '/customers', icon: Building2, roles: ['Admin', 'Manager', 'Customer'] },
   { label: 'Works', path: '/works', icon: ClipboardList, roles: ['Admin', 'Manager', 'Employee'] },
   { label: 'Deliverables', path: '/deliverables', icon: PackageCheck, roles: ['Admin', 'Manager', 'Employee'] },
   { label: 'Tasks', path: '/tasks', icon: ListChecks, roles: ['Admin', 'Manager', 'Employee'] },
