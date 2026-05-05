@@ -25,6 +25,13 @@ import BranchesPage from "./pages/BranchesPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import TicketsPage from "./pages/TicketsPage";
 import TasksPage from "./pages/TasksPage";
+import CommunicationsPage from "./pages/CommunicationsPage";
+import ApprovalsPage from "./pages/ApprovalsPage";
+import PerformancePage from "./pages/PerformancePage";
+import ExpensesPage from "./pages/ExpensesPage";
+import NotificationsPage from "./pages/NotificationsPage";
+import AutoReportsPage from "./pages/AutoReportsPage";
+import WorkflowPage from "./pages/WorkflowPage";
 
 const queryClient = new QueryClient();
 
@@ -56,6 +63,13 @@ const App = () => (
             <Route path="/templates" element={<TemplatesPage />} />
             <Route path="/tickets" element={<TicketsPage />} />
             <Route path="/tasks" element={<TasksPage />} />
+            <Route path="/communications" element={<CommunicationsPage />} />
+            <Route path="/approvals" element={<ApprovalsPage />} />
+            <Route path="/performance" element={<PerformancePage />} />
+            <Route path="/expenses" element={<ExpensesPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/auto-reports" element={<AutoReportsPage />} />
+            <Route path="/workflow" element={<WorkflowPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

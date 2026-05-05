@@ -25,6 +25,13 @@ import {
   FileBox,
   LifeBuoy,
   ListChecks,
+  MessageSquare,
+  CheckSquare,
+  Trophy,
+  Receipt,
+  Bell,
+  FileBarChart,
+  Workflow,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCRMStore } from '@/store/crmStore';
@@ -47,6 +54,13 @@ const navItems: NavItem[] = [
   { label: 'Works', path: '/works', icon: ClipboardList, roles: ['Admin', 'Manager', 'Employee'] },
   { label: 'Deliverables', path: '/deliverables', icon: PackageCheck, roles: ['Admin', 'Manager', 'Employee'] },
   { label: 'Tasks', path: '/tasks', icon: ListChecks, roles: ['Admin', 'Manager', 'Employee'] },
+  { label: 'Communications', path: '/communications', icon: MessageSquare, roles: ['Admin', 'Manager', 'Sales Executive', 'Employee'] },
+  { label: 'Approvals', path: '/approvals', icon: CheckSquare, roles: ['Admin', 'Manager', 'Customer'] },
+  { label: 'Performance', path: '/performance', icon: Trophy, roles: ['Admin', 'Manager'] },
+  { label: 'Expenses', path: '/expenses', icon: Receipt, roles: ['Admin', 'Accountant'] },
+  { label: 'Notifications', path: '/notifications', icon: Bell, roles: ['Admin', 'Manager', 'Telecaller', 'Sales Executive', 'Employee', 'Accountant', 'Customer'] },
+  { label: 'Auto Reports', path: '/auto-reports', icon: FileBarChart, roles: ['Admin', 'Manager', 'Accountant'] },
+  { label: 'Workflow', path: '/workflow', icon: Workflow, roles: ['Admin', 'Manager'] },
   { label: 'Invoices', path: '/invoices', icon: FileText, roles: ['Admin', 'Manager', 'Accountant'] },
   { label: 'Payments', path: '/payments', icon: CreditCard, roles: ['Admin', 'Manager', 'Accountant'] },
   { label: 'Client Portal', path: '/client-portal', icon: Eye, roles: ['Admin', 'Manager', 'Customer'] },
