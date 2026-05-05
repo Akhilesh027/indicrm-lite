@@ -371,3 +371,133 @@ export function generateProposalPDF(proposal: Proposal) {
 
   return doc;
 }
+
+// ============ Phase B: Automated monthly reports ============
+
+export function generateMonthlyClientReportPDF(
+  customerName: string,
+  month: string,
+  tasks: any[],
+  invoices: any[]
+) {
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  // Header
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, pageWidth, 40, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(20); doc.setFont('helvetica', 'bold');
+  doc.text('Monthly Client Report', 15, 18);
+  doc.setFontSize(11); doc.setFont('helvetica', 'normal');
+  doc.text(`${customerName}  |  ${month}`, 15, 28);
+  doc.setFontSize(9);
+  doc.text('Digitalness', pageWidth - 15, 18, { align: 'right' });
+
+  doc.setTextColor(0, 0, 0);
+
+  const total = tasks.length;
+  const done = tasks.filter((t) => t.status === 'Completed').length;
+  const inProg = tasks.filter((t) => t.status === 'In Progress').length;
+  const overdue = tasks.filter(
+    (t) => t.status !== 'Completed' && new Date(t.deadline) < new Date()
+  ).length;
+  const completion = total ? Math.round((done / total) * 100) : 0;
+
+  // KPIs
+  const cardY = 50, cardW = 42;
+  const cards = [
+    { label: 'Total Tasks', value: total.toString(), color: [59, 130, 246] },
+    { label: 'Completed', value: done.toString(), color: [16, 185, 129] },
+    { label: 'In Progress', value: inProg.toString(), color: [245, 158, 11] },
+    { label: 'Overdue', value: overdue.toString(), color: [239, 68, 68] },
+  ];
+  cards.forEach((c, i) => {
+    const x = 15 + i * (cardW + 5);
+    doc.setFillColor(c.color[0], c.color[1], c.color[2]);
+    doc.roundedRect(x, cardY, cardW, 22, 3, 3, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18); doc.setFont('helvetica', 'bold');
+    doc.text(c.value, x + cardW / 2, cardY + 12, { align: 'center' });
+    doc.setFontSize(8);
+    doc.text(c.label, x + cardW / 2, cardY + 18, { align: 'center' });
+  });
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(11); doc.setFont('helvetica', 'bold');
+  doc.text(`Overall Completion: ${completion}%`, 15, cardY + 32);
+
+  // Tasks table
+  autoTable(doc, {
+    startY: cardY + 40,
+    head: [['Task', 'Category', 'Status', 'Deadline']],
+    body: tasks.map((t) => [t.title, t.category || '-', t.status, t.deadline]),
+    theme: 'striped',
+    headStyles: { fillColor: [15, 23, 42] },
+    styles: { fontSize: 9 },
+  });
+
+  // Financials
+  const fy = (doc as any).lastAutoTable.finalY + 10;
+  const totalInv = invoices.reduce((s, i) => s + (i.total || 0), 0);
+  const totalPaid = invoices.reduce((s, i) => s + (i.paidAmount || 0), 0);
+  const due = totalInv - totalPaid;
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+  doc.text('Financial Summary', 15, fy);
+  autoTable(doc, {
+    startY: fy + 4,
+    head: [['Metric', 'Amount (₹)']],
+    body: [
+      ['Invoiced', `₹${totalInv.toLocaleString('en-IN')}`],
+      ['Paid', `₹${totalPaid.toLocaleString('en-IN')}`],
+      ['Pending', `₹${due.toLocaleString('en-IN')}`],
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42] },
+    styles: { fontSize: 10 },
+  });
+
+  // Footer
+  const fh = doc.internal.pageSize.getHeight() - 12;
+  doc.setFontSize(8); doc.setTextColor(120);
+  doc.text('Digitalness  •  Auto-generated report', pageWidth / 2, fh, { align: 'center' });
+  return doc;
+}
+
+export function generateAgencyMonthlyPDF(
+  month: string,
+  data: { revenue: number; expenses: number; tasksDone: number; tasksTotal: number; activeClients: number }
+) {
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const profit = data.revenue - data.expenses;
+  const margin = data.revenue ? Math.round((profit / data.revenue) * 100) : 0;
+
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, pageWidth, 40, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(22); doc.setFont('helvetica', 'bold');
+  doc.text('Agency Monthly P&L', 15, 20);
+  doc.setFontSize(11); doc.setFont('helvetica', 'normal');
+  doc.text(month, 15, 30);
+
+  doc.setTextColor(0, 0, 0);
+
+  autoTable(doc, {
+    startY: 55,
+    head: [['Metric', 'Value']],
+    body: [
+      ['Active Clients', data.activeClients.toString()],
+      ['Tasks Completed', `${data.tasksDone} / ${data.tasksTotal}`],
+      ['Revenue', `₹${data.revenue.toLocaleString('en-IN')}`],
+      ['Expenses', `₹${data.expenses.toLocaleString('en-IN')}`],
+      ['Profit', `₹${profit.toLocaleString('en-IN')}`],
+      ['Margin', `${margin}%`],
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42] },
+    styles: { fontSize: 11 },
+  });
+
+  return doc;
+}
