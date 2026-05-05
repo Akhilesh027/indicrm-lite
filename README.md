@@ -157,19 +157,77 @@ A full-featured **Digital Marketing Agency CRM** built with React 18, TypeScript
   - **Invoices**: Billing documents with status indicators and PDF download.
 - Reusable `StatBox` component, Framer Motion animations.
 
+### 20. Tasks & SLA
+- Project-level task system (`taskStore.ts`) separate from generic Works.
+- Auto-generated from **project type playbooks** (Digital Marketing, Website, App Dev, SEO, Promotion Video) or from project templates.
+- Each task tracks: `slaDays`, `startDate`, `deadline`, `priority` (Low/Med/High/Urgent), `status` (Not Started → In Progress → Review → Completed → Blocked).
+- **Work Updates**: nested log per task — message, attachments, time spent (hours), author, timestamp.
+- Auto-detected `isOverdue` & `daysToDeadline` helpers drive the overdue badges.
+- Per-employee aggregate `completionRate` / `delayRate` — feeds Performance scoring.
+- Per-project `progress()` powers Client Portal completion %.
+
+### 21. Communications
+- Unified **per-customer** timeline of all touchpoints: WhatsApp, Email, Call, Meeting, SMS.
+- Inbound vs Outbound direction, subject (for Email), message body, author, timestamp.
+- Quick "Log Communication" dialog with channel-aware fields.
+- Customer tab switcher; activity feed sorted newest-first.
+
+### 22. Approvals & Revisions
+- Generic approval workflow attachable to **Task / Deliverable / Proposal / Invoice**.
+- Statuses: `Pending`, `Approved`, `Rejected`, `Revision Requested`.
+- **Revision counter** auto-increments on each revision cycle (v2, v3…), preserving history.
+- Inline actions: Approve, Request Revision (with notes), Reject.
+- Tabbed view by status with counts.
+
+### 23. Performance Scoring
+- Auto-computed **leaderboard** for all employees from task data.
+- **Composite score** = 60% completion rate + 30% on-time rate + volume bonus (capped).
+- KPIs: Top Performer, Most Delays, Avg Completion across team.
+- Recharts bar chart for top 5; full ranked list with progress bars.
+
+### 24. Expenses & Profit
+- Track outflows by category: **Ad Spend, Tools/Software, Freelancer, Travel, Office, Salary, Misc**.
+- Optional **client/project attribution** for true per-client P&L.
+- Live KPIs: Revenue, Expenses, Profit, Margin %.
+- **Spend by Category** pie chart + **Per-Client P&L** grouped bar chart (Revenue / Expense / Profit).
+- Branch-tagged expenses for branch-wise reporting.
+
+### 25. Notifications
+- In-app inbox of system events: overdue tasks, pending approvals, overdue invoices, new leads, system alerts.
+- **Role-scoped**: each role sees only their relevant notifications.
+- Mark single / mark-all-as-read; unread highlight + NEW badge.
+- Optional deep-link per notification (e.g., `/tasks`, `/invoices`).
+
+### 26. Automated Reports
+- One-click **monthly PDF reports** generated client-side via jsPDF.
+- **Per-Client Report**: KPI cards (total / completed / in-progress / overdue tasks), completion %, full task table, financial summary (Invoiced / Paid / Pending).
+- **Agency Monthly P&L**: active clients, tasks done, revenue, expenses, profit, margin.
+- Period auto-set to current month; can be extended to historical periods.
+
+### 27. Workflow Visual
+- Visual end-to-end **client journey map**: Lead → Pipeline Deal → Proposal → Won → Customer → Project → Tasks/SLA → Invoice → Payment → Reports.
+- Animated stage cards with icons and short descriptions.
+- **Automations panel** lists every cross-module trigger (Lead → Pipeline, Deal Won → Customer+Project+Invoice, Task Overdue → Notification, etc.).
+
 ---
 
 ## 🏗️ Architecture
 
 ### State Management (Zustand + persist → localStorage)
-- **`crmStore.ts`** — auth, employees, leads, customers, projects, attendance, salaries, financial records, **branches**.
+- **`crmStore.ts`** — auth, employees, leads, customers, projects, attendance, salaries, financial records, **branches** (`digitalness-crm-storage-v4`).
 - **`dealStore.ts`** — sales pipeline deals (Kanban).
 - **`proposalStore.ts`** — proposals & their statuses.
 - **`invoiceStore.ts`** — invoices, deliverables, payment records, payment reminders.
 - **`templateStore.ts`** — project templates.
 - **`ticketStore.ts`** — support tickets.
+- **`taskStore.ts`** — agency tasks with SLA, work updates, playbooks (`digitalness-tasks-v1`).
+- **`activityStore.ts`** — lead/deal/customer activity log (Call/Meeting/WhatsApp/Email/Note).
+- **`communicationStore.ts`** — per-customer omnichannel timeline.
+- **`approvalStore.ts`** — approval & revision lifecycle for any entity.
+- **`expenseStore.ts`** — expense ledger with category & client attribution.
+- **`notificationStore.ts`** — in-app role-scoped notification inbox.
 
-Storage is versioned (`digitalness-crm-storage-v3`) so schema upgrades reseed cleanly.
+Storage is versioned (`digitalness-crm-storage-v4`) so schema upgrades reseed cleanly.
 
 ### Data Layer (`src/data/`)
 - `dummyData.ts` — employees, leads, customers, projects, branches, attendance, salaries, financials.
