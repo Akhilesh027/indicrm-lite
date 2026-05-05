@@ -286,6 +286,14 @@ Storage is versioned (`digitalness-crm-storage-v4`) so schema upgrades reseed cl
 | `/accounts` | Accounts | Admin, Accountant |
 | `/reports` | Reports | Admin, Manager, Accountant |
 | `/employee-report` | Per-Employee Report | Admin, Manager |
+| `/tasks` | Tasks & SLA | Admin, Manager, Employee |
+| `/communications` | Communications Timeline | Admin, Manager, Sales Executive, Employee |
+| `/approvals` | Approvals & Revisions | Admin, Manager, Customer |
+| `/performance` | Performance Scoring | Admin, Manager |
+| `/expenses` | Expenses & Profit | Admin, Accountant |
+| `/notifications` | Notification Inbox | All authenticated |
+| `/auto-reports` | Automated PDF Reports | Admin, Manager, Accountant |
+| `/workflow` | Agency Workflow Visual | Admin, Manager |
 
 ---
 
@@ -297,6 +305,10 @@ Storage is versioned (`digitalness-crm-storage-v4`) so schema upgrades reseed cl
 - **Proposal Accepted**: Linked deal auto-advances to `Negotiation`.
 - **Lead → Customer**: One-click conversion creates a Customer record and marks lead `Own Close`.
 - **Project Template → Project**: Creating a project from a template seeds default deliverables, days, and cost.
+- **Project Created → Tasks**: Auto-spawns tasks from project-type playbook (or chosen template) with SLA deadlines.
+- **Task Overdue → Notification**: Overdue task surfaces in role-scoped notification inbox.
+- **Approval Cycle → Revision Counter**: Each "Request Revision" bumps a versioned counter (v2, v3…).
+- **Expense Tagged to Customer → Per-Client P&L**: Auto-attributed in Expenses dashboard.
 
 ---
 
@@ -324,4 +336,4 @@ Custom domain: **Project → Settings → Domains → Connect Domain**. [Docs](h
 
 ## 🔢 Storage Versioning
 
-Persisted under `digitalness-crm-storage-v3`. To reset, clear that key from localStorage and reload — fresh dummy data reseeds automatically.
+Persisted under `digitalness-crm-storage-v4` (plus per-feature keys: `digitalness-tasks-v1`, `digitalness-activities-v1`, `digitalness-comm-v1`, `digitalness-approvals-v1`, `digitalness-expenses-v1`, `digitalness-notif-v1`). To reset, clear those keys from localStorage and reload — fresh dummy data reseeds automatically.
