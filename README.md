@@ -27,10 +27,18 @@ A full-featured **Digital Marketing Agency CRM** built with React 18, TypeScript
 17. [Reports](#17-reports)
 18. [Employee Report](#18-employee-report)
 19. [Client Portal](#19-client-portal)
-20. [Architecture](#-architecture)
-21. [Tech Stack](#-tech-stack)
-22. [Routes & Role Access](#-routes--role-access-matrix)
-23. [Local Development](#-local-development)
+20. [Tasks & SLA](#20-tasks--sla)
+21. [Communications](#21-communications)
+22. [Approvals & Revisions](#22-approvals--revisions)
+23. [Performance Scoring](#23-performance-scoring)
+24. [Expenses & Profit](#24-expenses--profit)
+25. [Notifications](#25-notifications)
+26. [Automated Reports](#26-automated-reports)
+27. [Workflow Visual](#27-workflow-visual)
+28. [Architecture](#-architecture)
+29. [Tech Stack](#-tech-stack)
+30. [Routes & Role Access](#-routes--role-access-matrix)
+31. [Local Development](#-local-development)
 
 ---
 
