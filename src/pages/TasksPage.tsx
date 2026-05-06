@@ -143,7 +143,7 @@ export default function TasksPage() {
         </div>
       </motion.div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="p-4 rounded-xl bg-card border border-border shadow-card">
           <p className="text-2xl font-bold">{stats.total}</p>
           <p className="text-sm text-muted-foreground">Total</p>
@@ -160,6 +160,18 @@ export default function TasksPage() {
           <p className="text-2xl font-bold text-success">{stats.done}</p>
           <p className="text-sm text-muted-foreground">Completed</p>
         </div>
+        <button
+          onClick={() => setApprovalFilter('Pending')}
+          className="text-left p-4 rounded-xl bg-warning/10 border border-warning/30 hover:bg-warning/20 transition">
+          <p className="text-2xl font-bold text-warning">{stats.pendingApproval}</p>
+          <p className="text-sm text-muted-foreground">Approval Pending</p>
+        </button>
+        <button
+          onClick={() => setApprovalFilter('Revision Requested')}
+          className="text-left p-4 rounded-xl bg-accent/10 border border-accent/30 hover:bg-accent/20 transition">
+          <p className="text-2xl font-bold text-accent">{stats.revision}</p>
+          <p className="text-sm text-muted-foreground">In Revision</p>
+        </button>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-3">
@@ -169,10 +181,20 @@ export default function TasksPage() {
             onChange={(e) => setSearch(e.target.value)} className="pl-10" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full lg:w-48"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-full lg:w-48"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="All">All Statuses</SelectItem>
             {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={approvalFilter} onValueChange={setApprovalFilter}>
+          <SelectTrigger className="w-full lg:w-56"><SelectValue placeholder="Approval" /></SelectTrigger>
+          <SelectContent>
+            {APPROVAL_FILTERS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s === 'All' ? 'All Approvals' : s}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
