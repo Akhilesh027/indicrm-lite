@@ -18,9 +18,12 @@ import {
   AgencyTask, TaskStatus, TaskUpdate, daysToDeadline, isOverdue, useTaskStore,
 } from '@/store/taskStore';
 import { useCRMStore } from '@/store/crmStore';
+import { useApprovalStore, ApprovalStatus } from '@/store/approvalStore';
+import { CheckSquare, RefreshCw, XCircle, HelpCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const STATUSES: TaskStatus[] = ['Not Started', 'In Progress', 'Review', 'Completed', 'Blocked'];
+const APPROVAL_FILTERS = ['All', 'Pending', 'Approved', 'Rejected', 'Revision Requested', 'No Approval'] as const;
 
 const statusVariant: Record<TaskStatus, string> = {
   'Not Started': 'secondary',
@@ -30,12 +33,21 @@ const statusVariant: Record<TaskStatus, string> = {
   Blocked: 'failed',
 };
 
+const approvalMeta: Record<ApprovalStatus, { variant: string; icon: any; label: string }> = {
+  Pending: { variant: 'info', icon: HelpCircle, label: 'Approval Pending' },
+  Approved: { variant: 'completed', icon: CheckSquare, label: 'Approved' },
+  Rejected: { variant: 'failed', icon: XCircle, label: 'Rejected' },
+  'Revision Requested': { variant: 'inProgress', icon: RefreshCw, label: 'Revision' },
+};
+
 export default function TasksPage() {
   const { tasks, updateTask, addUpdate } = useTaskStore();
   const { employees, projects, customers, currentUser } = useCRMStore();
+  const { approvals } = useApprovalStore();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [approvalFilter, setApprovalFilter] = useState<string>('All');
   const [selected, setSelected] = useState<AgencyTask | null>(null);
   const [updMsg, setUpdMsg] = useState('');
   const [updFiles, setUpdFiles] = useState('');
@@ -43,10 +55,30 @@ export default function TasksPage() {
 
   const isEmployeeRole = currentUser?.role === 'Employee';
 
+  // Latest approval per task id
+  const taskApprovalMap = useMemo(() => {
+    const m: Record<string, typeof approvals[number]> = {};
+    approvals
+      .filter((a) => a.entityType === 'Task')
+      .forEach((a) => {
+        const prev = m[a.entityId];
+        if (!prev || a.createdAt > prev.createdAt) m[a.entityId] = a;
+      });
+    return m;
+  }, [approvals]);
+
   const visible = useMemo(() => {
     return tasks.filter((t) => {
       if (isEmployeeRole && t.assignedTo !== currentUser?.id) return false;
       if (statusFilter !== 'All' && t.status !== statusFilter) return false;
+      if (approvalFilter !== 'All') {
+        const ap = taskApprovalMap[t.id];
+        if (approvalFilter === 'No Approval') {
+          if (ap) return false;
+        } else {
+          if (!ap || ap.status !== approvalFilter) return false;
+        }
+      }
       if (search) {
         const q = search.toLowerCase();
         const proj = projects.find((p) => p.id === t.projectId)?.title || '';
@@ -58,13 +90,15 @@ export default function TasksPage() {
       }
       return true;
     });
-  }, [tasks, search, statusFilter, isEmployeeRole, currentUser, projects]);
+  }, [tasks, search, statusFilter, approvalFilter, isEmployeeRole, currentUser, projects, taskApprovalMap]);
 
   const stats = {
     total: visible.length,
     inProgress: visible.filter((t) => t.status === 'In Progress').length,
     overdue: visible.filter(isOverdue).length,
     done: visible.filter((t) => t.status === 'Completed').length,
+    pendingApproval: visible.filter((t) => taskApprovalMap[t.id]?.status === 'Pending').length,
+    revision: visible.filter((t) => taskApprovalMap[t.id]?.status === 'Revision Requested').length,
   };
 
   const empName = (id?: string) =>
@@ -109,7 +143,7 @@ export default function TasksPage() {
         </div>
       </motion.div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="p-4 rounded-xl bg-card border border-border shadow-card">
           <p className="text-2xl font-bold">{stats.total}</p>
           <p className="text-sm text-muted-foreground">Total</p>
@@ -126,6 +160,18 @@ export default function TasksPage() {
           <p className="text-2xl font-bold text-success">{stats.done}</p>
           <p className="text-sm text-muted-foreground">Completed</p>
         </div>
+        <button
+          onClick={() => setApprovalFilter('Pending')}
+          className="text-left p-4 rounded-xl bg-warning/10 border border-warning/30 hover:bg-warning/20 transition">
+          <p className="text-2xl font-bold text-warning">{stats.pendingApproval}</p>
+          <p className="text-sm text-muted-foreground">Approval Pending</p>
+        </button>
+        <button
+          onClick={() => setApprovalFilter('Revision Requested')}
+          className="text-left p-4 rounded-xl bg-accent/10 border border-accent/30 hover:bg-accent/20 transition">
+          <p className="text-2xl font-bold text-accent">{stats.revision}</p>
+          <p className="text-sm text-muted-foreground">In Revision</p>
+        </button>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-3">
@@ -135,10 +181,20 @@ export default function TasksPage() {
             onChange={(e) => setSearch(e.target.value)} className="pl-10" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full lg:w-48"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-full lg:w-48"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="All">All Statuses</SelectItem>
             {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={approvalFilter} onValueChange={setApprovalFilter}>
+          <SelectTrigger className="w-full lg:w-56"><SelectValue placeholder="Approval" /></SelectTrigger>
+          <SelectContent>
+            {APPROVAL_FILTERS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s === 'All' ? 'All Approvals' : s}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -152,6 +208,7 @@ export default function TasksPage() {
                 <th className="text-left p-3 text-xs font-semibold text-muted-foreground">Project / Client</th>
                 <th className="text-left p-3 text-xs font-semibold text-muted-foreground">Owner</th>
                 <th className="text-left p-3 text-xs font-semibold text-muted-foreground">Status</th>
+                <th className="text-left p-3 text-xs font-semibold text-muted-foreground">Approval</th>
                 <th className="text-left p-3 text-xs font-semibold text-muted-foreground">SLA / Deadline</th>
                 <th className="text-left p-3 text-xs font-semibold text-muted-foreground">Updates</th>
               </tr>
@@ -160,6 +217,8 @@ export default function TasksPage() {
               {visible.map((t, i) => {
                 const overdue = isOverdue(t);
                 const days = daysToDeadline(t);
+                const ap = taskApprovalMap[t.id];
+                const apMeta = ap ? approvalMeta[ap.status] : null;
                 return (
                   <motion.tr key={t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                     transition={{ delay: i * 0.02 }}
@@ -176,6 +235,23 @@ export default function TasksPage() {
                     <td className="p-3 text-sm text-muted-foreground">{empName(t.assignedTo)}</td>
                     <td className="p-3">
                       <Badge variant={statusVariant[t.status] as any}>{t.status}</Badge>
+                    </td>
+                    <td className="p-3">
+                      {ap && apMeta ? (
+                        <div className="space-y-1">
+                          <Badge variant={apMeta.variant as any} className="text-[10px]">
+                            <apMeta.icon className="w-3 h-3 mr-1" />
+                            {apMeta.label}
+                          </Badge>
+                          {ap.revisionCount > 0 && (
+                            <p className="text-[10px] text-muted-foreground">
+                              v{ap.revisionCount + 1} • {ap.revisionCount} revision{ap.revisionCount > 1 ? 's' : ''}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="p-3">
                       <div className="flex items-center gap-2">
@@ -204,7 +280,7 @@ export default function TasksPage() {
                 );
               })}
               {visible.length === 0 && (
-                <tr><td colSpan={6} className="p-6 text-center text-sm text-muted-foreground">No tasks</td></tr>
+                <tr><td colSpan={7} className="p-6 text-center text-sm text-muted-foreground">No tasks</td></tr>
               )}
             </tbody>
           </table>
@@ -238,6 +314,29 @@ export default function TasksPage() {
                     <p className="font-medium">{new Date(selected.deadline).toLocaleDateString('en-IN')}</p>
                   </div>
                 </div>
+
+                {(() => {
+                  const ap = taskApprovalMap[selected.id];
+                  if (!ap) return null;
+                  const m = approvalMeta[ap.status];
+                  return (
+                    <div className="p-3 rounded-lg border border-border bg-muted/30">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-sm font-semibold">Latest Approval</p>
+                        <Badge variant={m.variant as any} className="text-[10px]">
+                          <m.icon className="w-3 h-3 mr-1" />{m.label}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Submitted {new Date(ap.createdAt).toLocaleString('en-IN')} by {ap.submittedByName || ap.submittedBy}
+                        {ap.revisionCount > 0 && ` • ${ap.revisionCount} revision${ap.revisionCount > 1 ? 's' : ''}`}
+                      </p>
+                      {ap.revisionNotes && (
+                        <p className="text-xs mt-2 italic">"{ap.revisionNotes}"</p>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div>
                   <p className="text-sm font-semibold mb-2">Status</p>
