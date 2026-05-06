@@ -208,6 +208,7 @@ export default function TasksPage() {
                 <th className="text-left p-3 text-xs font-semibold text-muted-foreground">Project / Client</th>
                 <th className="text-left p-3 text-xs font-semibold text-muted-foreground">Owner</th>
                 <th className="text-left p-3 text-xs font-semibold text-muted-foreground">Status</th>
+                <th className="text-left p-3 text-xs font-semibold text-muted-foreground">Approval</th>
                 <th className="text-left p-3 text-xs font-semibold text-muted-foreground">SLA / Deadline</th>
                 <th className="text-left p-3 text-xs font-semibold text-muted-foreground">Updates</th>
               </tr>
@@ -216,6 +217,8 @@ export default function TasksPage() {
               {visible.map((t, i) => {
                 const overdue = isOverdue(t);
                 const days = daysToDeadline(t);
+                const ap = taskApprovalMap[t.id];
+                const apMeta = ap ? approvalMeta[ap.status] : null;
                 return (
                   <motion.tr key={t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                     transition={{ delay: i * 0.02 }}
