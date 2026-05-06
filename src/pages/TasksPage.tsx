@@ -280,7 +280,7 @@ export default function TasksPage() {
                 );
               })}
               {visible.length === 0 && (
-                <tr><td colSpan={6} className="p-6 text-center text-sm text-muted-foreground">No tasks</td></tr>
+                <tr><td colSpan={7} className="p-6 text-center text-sm text-muted-foreground">No tasks</td></tr>
               )}
             </tbody>
           </table>
