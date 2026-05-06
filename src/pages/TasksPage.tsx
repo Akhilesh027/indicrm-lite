@@ -315,6 +315,29 @@ export default function TasksPage() {
                   </div>
                 </div>
 
+                {(() => {
+                  const ap = taskApprovalMap[selected.id];
+                  if (!ap) return null;
+                  const m = approvalMeta[ap.status];
+                  return (
+                    <div className="p-3 rounded-lg border border-border bg-muted/30">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-sm font-semibold">Latest Approval</p>
+                        <Badge variant={m.variant as any} className="text-[10px]">
+                          <m.icon className="w-3 h-3 mr-1" />{m.label}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Submitted {new Date(ap.createdAt).toLocaleString('en-IN')} by {ap.submittedByName || ap.submittedBy}
+                        {ap.revisionCount > 0 && ` • ${ap.revisionCount} revision${ap.revisionCount > 1 ? 's' : ''}`}
+                      </p>
+                      {ap.revisionNotes && (
+                        <p className="text-xs mt-2 italic">"{ap.revisionNotes}"</p>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <div>
                   <p className="text-sm font-semibold mb-2">Status</p>
                   <div className="flex flex-wrap gap-2">
