@@ -43,9 +43,11 @@ const approvalMeta: Record<ApprovalStatus, { variant: string; icon: any; label: 
 export default function TasksPage() {
   const { tasks, updateTask, addUpdate } = useTaskStore();
   const { employees, projects, customers, currentUser } = useCRMStore();
+  const { approvals } = useApprovalStore();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [approvalFilter, setApprovalFilter] = useState<string>('All');
   const [selected, setSelected] = useState<AgencyTask | null>(null);
   const [updMsg, setUpdMsg] = useState('');
   const [updFiles, setUpdFiles] = useState('');
@@ -53,10 +55,30 @@ export default function TasksPage() {
 
   const isEmployeeRole = currentUser?.role === 'Employee';
 
+  // Latest approval per task id
+  const taskApprovalMap = useMemo(() => {
+    const m: Record<string, typeof approvals[number]> = {};
+    approvals
+      .filter((a) => a.entityType === 'Task')
+      .forEach((a) => {
+        const prev = m[a.entityId];
+        if (!prev || a.createdAt > prev.createdAt) m[a.entityId] = a;
+      });
+    return m;
+  }, [approvals]);
+
   const visible = useMemo(() => {
     return tasks.filter((t) => {
       if (isEmployeeRole && t.assignedTo !== currentUser?.id) return false;
       if (statusFilter !== 'All' && t.status !== statusFilter) return false;
+      if (approvalFilter !== 'All') {
+        const ap = taskApprovalMap[t.id];
+        if (approvalFilter === 'No Approval') {
+          if (ap) return false;
+        } else {
+          if (!ap || ap.status !== approvalFilter) return false;
+        }
+      }
       if (search) {
         const q = search.toLowerCase();
         const proj = projects.find((p) => p.id === t.projectId)?.title || '';
@@ -68,13 +90,15 @@ export default function TasksPage() {
       }
       return true;
     });
-  }, [tasks, search, statusFilter, isEmployeeRole, currentUser, projects]);
+  }, [tasks, search, statusFilter, approvalFilter, isEmployeeRole, currentUser, projects, taskApprovalMap]);
 
   const stats = {
     total: visible.length,
     inProgress: visible.filter((t) => t.status === 'In Progress').length,
     overdue: visible.filter(isOverdue).length,
     done: visible.filter((t) => t.status === 'Completed').length,
+    pendingApproval: visible.filter((t) => taskApprovalMap[t.id]?.status === 'Pending').length,
+    revision: visible.filter((t) => taskApprovalMap[t.id]?.status === 'Revision Requested').length,
   };
 
   const empName = (id?: string) =>
