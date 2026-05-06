@@ -237,6 +237,23 @@ export default function TasksPage() {
                       <Badge variant={statusVariant[t.status] as any}>{t.status}</Badge>
                     </td>
                     <td className="p-3">
+                      {ap && apMeta ? (
+                        <div className="space-y-1">
+                          <Badge variant={apMeta.variant as any} className="text-[10px]">
+                            <apMeta.icon className="w-3 h-3 mr-1" />
+                            {apMeta.label}
+                          </Badge>
+                          {ap.revisionCount > 0 && (
+                            <p className="text-[10px] text-muted-foreground">
+                              v{ap.revisionCount + 1} • {ap.revisionCount} revision{ap.revisionCount > 1 ? 's' : ''}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="p-3">
                       <div className="flex items-center gap-2">
                         <Timer className="w-3 h-3 text-muted-foreground" />
                         <span className="text-xs">{t.slaDays}d SLA</span>
