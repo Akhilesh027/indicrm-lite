@@ -18,9 +18,12 @@ import {
   AgencyTask, TaskStatus, TaskUpdate, daysToDeadline, isOverdue, useTaskStore,
 } from '@/store/taskStore';
 import { useCRMStore } from '@/store/crmStore';
+import { useApprovalStore, ApprovalStatus } from '@/store/approvalStore';
+import { CheckSquare, RefreshCw, XCircle, HelpCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const STATUSES: TaskStatus[] = ['Not Started', 'In Progress', 'Review', 'Completed', 'Blocked'];
+const APPROVAL_FILTERS = ['All', 'Pending', 'Approved', 'Rejected', 'Revision Requested', 'No Approval'] as const;
 
 const statusVariant: Record<TaskStatus, string> = {
   'Not Started': 'secondary',
@@ -28,6 +31,13 @@ const statusVariant: Record<TaskStatus, string> = {
   Review: 'info',
   Completed: 'completed',
   Blocked: 'failed',
+};
+
+const approvalMeta: Record<ApprovalStatus, { variant: string; icon: any; label: string }> = {
+  Pending: { variant: 'info', icon: HelpCircle, label: 'Approval Pending' },
+  Approved: { variant: 'completed', icon: CheckSquare, label: 'Approved' },
+  Rejected: { variant: 'failed', icon: XCircle, label: 'Rejected' },
+  'Revision Requested': { variant: 'inProgress', icon: RefreshCw, label: 'Revision' },
 };
 
 export default function TasksPage() {
