@@ -2,8 +2,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import EmployeesPage from "./pages/EmployeesPage";
@@ -35,6 +36,51 @@ import WorkflowPage from "./pages/WorkflowPage";
 
 const queryClient = new QueryClient();
 
+const roleRoutes: Record<string, string> = {
+  Admin: "/dashboard",
+  "Operational Manager": "/employees",
+  "Performance Marketer": "/performance",
+  "Content Writer": "/tasks",
+  "Graphic Designer": "/tasks",
+  "UI/UX": "/works",
+  "Frontend Dev": "/works",
+  "Backend Dev": "/works",
+  BDE: "/leads",
+  Support: "/tickets",
+};
+
+const getUserRoute = () => {
+  try {
+    const user = localStorage.getItem("user");
+    if (!user) return "/dashboard";
+
+    const parsedUser = JSON.parse(user);
+    return roleRoutes[parsedUser.role] || "/dashboard";
+  } catch {
+    return "/dashboard";
+  }
+};
+
+const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
+  const token = localStorage.getItem("token");
+
+  if (!token) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
+const PublicRoute = ({ children }: { children: JSX.Element }) => {
+  const token = localStorage.getItem("token");
+
+  if (token) {
+    return <Navigate to={getUserRoute()} replace />;
+  }
+
+  return children;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -42,8 +88,22 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<LoginPage />} />
-          <Route element={<DashboardLayout />}>
+          <Route
+            path="/"
+            element={
+              <PublicRoute>
+                <LoginPage />
+              </PublicRoute>
+            }
+          />
+
+          <Route
+            element={
+              <ProtectedRoute>
+                <DashboardLayout />
+              </ProtectedRoute>
+            }
+          >
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/employees" element={<EmployeesPage />} />
             <Route path="/leads" element={<LeadsPage />} />
@@ -71,6 +131,7 @@ const App = () => (
             <Route path="/auto-reports" element={<AutoReportsPage />} />
             <Route path="/workflow" element={<WorkflowPage />} />
           </Route>
+
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

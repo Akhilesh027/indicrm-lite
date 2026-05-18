@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Search,
@@ -10,7 +10,10 @@ import {
   Timer,
   Send,
   RotateCcw,
+  Loader2,
 } from "lucide-react";
+import axios from "axios";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -28,26 +31,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  AgencyTask,
-  TaskStatus,
-  TaskUpdate,
-  daysToDeadline,
-  isOverdue,
-  useTaskStore,
-} from "@/store/taskStore";
-import { useCRMStore } from "@/store/crmStore";
 import { toast } from "sonner";
+
+const API_URL = import.meta.env.VITE_API_URL || "https://digitalness-backend.onrender.com/api";
+
+type TaskStatus =
+  | "Pending"
+  | "Not Started"
+  | "In Progress"
+  | "Review"
+  | "Completed"
+  | "Revision"
+  | "Failed";
 
 const STATUSES: TaskStatus[] = [
   "Pending",
+  "Not Started",
   "In Progress",
   "Review",
   "Completed",
   "Revision",
+  "Failed",
 ];
 
 const POSITIONS = [
+  "Operational Manager",
   "Digital Marketer",
   "Performance Marketer",
   "Content Writer",
@@ -61,25 +69,108 @@ const POSITIONS = [
 
 const PRIORITIES = ["High", "Medium", "Low"];
 
-const statusVariant: Record<TaskStatus, string> = {
+const statusVariant: Record<string, string> = {
   Pending: "secondary",
+  "Not Started": "secondary",
   "In Progress": "inProgress",
   Review: "info",
   Completed: "completed",
   Revision: "warning",
+  Failed: "destructive",
 };
 
+const getAuthConfig = () => {
+  const token =
+    localStorage.getItem("token") ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("accessToken");
+
+  return {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  };
+};
+
+const getArrayData = (res: any) => {
+  if (Array.isArray(res.data)) return res.data;
+  if (Array.isArray(res.data.data)) return res.data.data;
+  if (Array.isArray(res.data.users)) return res.data.users;
+  if (Array.isArray(res.data.customers)) return res.data.customers;
+  if (Array.isArray(res.data.works)) return res.data.works;
+  return [];
+};
+
+const getCurrentUser = () => {
+  try {
+    const user =
+      localStorage.getItem("user") ||
+      localStorage.getItem("currentUser") ||
+      localStorage.getItem("authUser");
+
+    return user ? JSON.parse(user) : null;
+  } catch {
+    return null;
+  }
+};
+
+const daysToDeadline = (deadline?: string) => {
+  if (!deadline) return 0;
+
+  const today = new Date();
+  const due = new Date(deadline);
+
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+
+  return Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+const isOverdue = (task: any) => {
+  if (!task.dueDate) return false;
+  if (task.status === "Completed") return false;
+  return daysToDeadline(task.dueDate) < 0;
+};
+
+
+const Spinner = ({ className = "w-4 h-4 mr-2" }: { className?: string }) => (
+  <Loader2 className={`${className} animate-spin`} />
+);
+
+const TableSkeleton = () => (
+  <>
+    {Array.from({ length: 6 }).map((_, index) => (
+      <tr key={index} className="animate-pulse">
+        {Array.from({ length: 8 }).map((__, cellIndex) => (
+          <td key={cellIndex} className="p-3">
+            <div className="h-4 w-full rounded bg-muted" />
+            {cellIndex === 0 && <div className="mt-2 h-3 w-2/3 rounded bg-muted" />}
+          </td>
+        ))}
+      </tr>
+    ))}
+  </>
+);
+
 export default function TasksPage() {
-  const { tasks, updateTask, addUpdate, addTask } = useTaskStore();
-  const { employees, projects, customers, branches = [], currentUser } = useCRMStore();
+  const currentUser = getCurrentUser();
+
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [updateLoading, setUpdateLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState<string | null>(null);
+  const [reviewLoading, setReviewLoading] = useState<"Completed" | "Revision" | null>(null);
+  const [assignLoading, setAssignLoading] = useState(false);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [priorityFilter, setPriorityFilter] = useState("All");
   const [positionFilter, setPositionFilter] = useState("All");
-  const [branchFilter, setBranchFilter] = useState("All");
 
-  const [selected, setSelected] = useState<AgencyTask | null>(null);
+  const [selected, setSelected] = useState<any | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const [updMsg, setUpdMsg] = useState("");
@@ -89,47 +180,154 @@ export default function TasksPage() {
 
   const [form, setForm] = useState({
     title: "",
-    projectId: "",
+    parentWorkId: "",
     customerId: "",
     serviceType: "",
     assignedTo: "",
     assignedPosition: "",
     priority: "Medium",
     deadline: "",
-    branchId: "",
     notes: "",
     slaDays: 2,
   });
 
   const role = currentUser?.role;
-  const isAdminOrManager = role === "Admin" || role === "Manager";
-  const isEmployee = role === "Employee";
+  const isAdminOrManager =
+    role === "Admin" ||
+    role === "admin" ||
+    role === "Manager" ||
+    role === "Operational Manager";
+
+  const isEmployee = !isAdminOrManager;
+
+  const formatAssignedUser = (assignedTo: any) => {
+    if (!assignedTo) return null;
+
+    if (typeof assignedTo === "string") {
+      const user = employees.find(
+        (emp: any) => emp._id === assignedTo || emp.id === assignedTo
+      );
+
+      return {
+        id: assignedTo,
+        name: user?.name || user?.fullName || user?.email || "Unassigned",
+        role: user?.role || user?.department || "Employee",
+      };
+    }
+
+    return {
+      id: assignedTo._id || assignedTo.id,
+      name:
+        assignedTo.name ||
+        assignedTo.fullName ||
+        assignedTo.username ||
+        assignedTo.email ||
+        "Unassigned",
+      role: assignedTo.role || assignedTo.department || "Employee",
+    };
+  };
+
+  const formatWork = (work: any) => {
+    const assignedUser = Array.isArray(work.assignedTo)
+      ? formatAssignedUser(work.assignedTo[0])
+      : formatAssignedUser(work.assignedTo);
+
+    return {
+      id: work._id || work.id,
+      title: work.title || "",
+      parentWorkId:
+        work.parentWorkId?._id || work.parentWorkId || work.parentTaskId || "",
+      parentWorkTitle:
+        work.parentWorkId?.title || work.parentWorkTitle || work.parentTitle || "",
+      customerId: work.customer?._id || work.customer || work.customerId,
+      customerName:
+        work.customer?.name ||
+        work.customer?.customerName ||
+        work.customer?.clientName ||
+        work.customer?.companyName ||
+        "—",
+      serviceType: work.workType || work.type || "",
+      assignedTo: assignedUser?.id || "",
+      assignedName: assignedUser?.name || "Unassigned",
+      assignedPosition: assignedUser?.role || "Employee",
+      priority: work.priority || "Medium",
+      deadline: work.dueDate || work.deadline,
+      dueDate: work.dueDate || work.deadline,
+      status: work.status || "Pending",
+      progressNote: work.progressNote || "",
+      attachments: work.attachments || [],
+      timeSpent: work.timeSpent || 0,
+      managerReviewNote: work.managerReviewNote || "",
+      notes: work.description || work.notes || "",
+      slaDays: work.slaDays || 2,
+      createdAt: work.createdAt,
+      updates: work.updates || [],
+      raw: work,
+    };
+  };
+
+  const fetchCustomersAndUsers = async () => {
+    try {
+      const [customerRes, userRes] = await Promise.all([
+        axios.get(`${API_URL}/customers`, getAuthConfig()),
+        axios.get(`${API_URL}/users`, getAuthConfig()),
+      ]);
+
+      setCustomers(getArrayData(customerRes));
+      setEmployees(getArrayData(userRes));
+    } catch {
+      toast.error("Failed to fetch customers and users");
+    }
+  };
+
+  const fetchWorks = async () => {
+    try {
+      setLoading(true);
+      const res = await axios.get(`${API_URL}/works`, getAuthConfig());
+      const data = getArrayData(res);
+      setTasks(data.map(formatWork));
+    } catch {
+      toast.error("Failed to fetch works");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const loadData = async () => {
+      await fetchCustomersAndUsers();
+      await fetchWorks();
+    };
+
+    loadData();
+  }, []);
 
   const visible = useMemo(() => {
     return tasks.filter((t) => {
       if (isEmployee) {
+        const userId = currentUser?._id || currentUser?.id;
         const userPosition = currentUser?.position || currentUser?.employeePosition;
-        if (t.assignedTo !== currentUser?.id && t.assignedPosition !== userPosition) {
+
+        if (t.assignedTo !== userId && t.assignedPosition !== userPosition) {
           return false;
         }
       }
 
       if (statusFilter !== "All" && t.status !== statusFilter) return false;
       if (priorityFilter !== "All" && t.priority !== priorityFilter) return false;
-      if (positionFilter !== "All" && t.assignedPosition !== positionFilter) return false;
-      if (branchFilter !== "All" && t.branchId !== branchFilter) return false;
+      if (positionFilter !== "All" && t.assignedPosition !== positionFilter)
+        return false;
 
       if (search) {
         const q = search.toLowerCase();
-        const proj = projects.find((p) => p.id === t.projectId)?.title || "";
-        const cust = customers.find((c) => c.id === t.customerId)?.name || "";
 
         return (
           t.title.toLowerCase().includes(q) ||
-          proj.toLowerCase().includes(q) ||
-          cust.toLowerCase().includes(q) ||
-          (t.serviceType || "").toLowerCase().includes(q) ||
-          (t.assignedPosition || "").toLowerCase().includes(q)
+          t.customerName.toLowerCase().includes(q) ||
+          t.serviceType.toLowerCase().includes(q) ||
+          t.assignedName.toLowerCase().includes(q) ||
+          t.assignedPosition.toLowerCase().includes(q) ||
+          t.parentWorkTitle.toLowerCase().includes(q)
         );
       }
 
@@ -141,11 +339,8 @@ export default function TasksPage() {
     statusFilter,
     priorityFilter,
     positionFilter,
-    branchFilter,
     isEmployee,
     currentUser,
-    projects,
-    customers,
   ]);
 
   const stats = {
@@ -155,20 +350,39 @@ export default function TasksPage() {
     completed: visible.filter((t) => t.status === "Completed").length,
   };
 
-  const empName = (id?: string) =>
-    id ? employees.find((e) => e.id === id)?.name || "Unassigned" : "Unassigned";
+  const empName = (id?: string, fallback?: string) => {
+    if (!id) return fallback || "Unassigned";
 
-  const projName = (id?: string) =>
-    id ? projects.find((p) => p.id === id)?.title || id : "—";
+    const emp = employees.find((e: any) => e._id === id || e.id === id);
 
-  const custName = (id?: string) =>
-    id ? customers.find((c) => c.id === id)?.name || "—" : "—";
+    return (
+      emp?.name ||
+      emp?.fullName ||
+      emp?.username ||
+      emp?.email ||
+      fallback ||
+      "Unassigned"
+    );
+  };
 
-  const branchName = (id?: string) =>
-    id ? branches.find((b: any) => b.id === id)?.name || "—" : "—";
+  const custName = (id?: string, fallback?: string) => {
+    if (!id) return fallback || "—";
+
+    const cust = customers.find((c: any) => c._id === id || c.id === id);
+
+    return (
+      cust?.name ||
+      cust?.customerName ||
+      cust?.clientName ||
+      cust?.companyName ||
+      fallback ||
+      "—"
+    );
+  };
 
   const suggestedEmployees = employees.filter((emp: any) => {
     if (!form.assignedPosition) return true;
+
     return (
       emp.position === form.assignedPosition ||
       emp.employeePosition === form.assignedPosition ||
@@ -180,125 +394,253 @@ export default function TasksPage() {
   const resetForm = () => {
     setForm({
       title: "",
-      projectId: "",
+      parentWorkId: "",
       customerId: "",
       serviceType: "",
       assignedTo: "",
       assignedPosition: "",
       priority: "Medium",
       deadline: "",
-      branchId: "",
       notes: "",
       slaDays: 2,
     });
   };
 
-  const handleCreateTask = () => {
-    if (!form.title || !form.assignedPosition || !form.deadline) {
-      toast.error("Task title, position and deadline are required");
+ const handleParentWorkChange = (workId: string) => {
+  const parentWork = tasks.find((t) => t.id === workId);
+
+  setForm({
+    ...form,
+    parentWorkId: workId,
+    customerId: parentWork?.customerId || form.customerId,
+    serviceType: parentWork?.serviceType || form.serviceType,
+    assignedTo: parentWork?.assignedTo || "",
+    assignedPosition: parentWork?.assignedPosition || "",
+    priority: parentWork?.priority || form.priority,
+    deadline: parentWork?.deadline || form.deadline,
+  });
+};
+
+  const handleCreateTask = async () => {
+    if (!form.title || !form.customerId || !form.serviceType || !form.assignedTo) {
+      toast.error("Title, customer, service type and employee are required");
       return;
     }
 
-    const newTask: AgencyTask = {
-      id: `TASK-${Date.now()}`,
-      title: form.title,
-      projectId: form.projectId,
-      customerId: form.customerId,
-      serviceType: form.serviceType,
-      assignedTo: form.assignedTo,
-      assignedPosition: form.assignedPosition,
-      priority: form.priority as "High" | "Medium" | "Low",
-      deadline: form.deadline,
-      status: "Pending",
-      progressNote: "",
-      attachments: [],
-      timeSpent: 0,
-      managerReviewNote: "",
-      notes: form.notes,
-      slaDays: Number(form.slaDays) || 2,
-      branchId: form.branchId,
-      createdAt: new Date().toISOString(),
-      updates: [],
-    };
+    try {
+      setCreateLoading(true);
 
-    addTask(newTask);
-    toast.success("Task created successfully");
-    setCreateOpen(false);
-    resetForm();
+      const payload = {
+        title: form.title,
+        parentWorkId: form.parentWorkId || null,
+        workType: form.serviceType,
+        customer: form.customerId,
+        assignedTo: form.assignedTo,
+        priority: form.priority,
+        dueDate: form.deadline,
+        description: form.notes,
+        status: "Pending",
+        slaDays: Number(form.slaDays) || 2,
+      };
+
+      await axios.post(`${API_URL}/works`, payload, getAuthConfig());
+
+      toast.success(
+        form.parentWorkId
+          ? "Task created under existing work"
+          : "Task created successfully"
+      );
+
+      setCreateOpen(false);
+      resetForm();
+      fetchWorks();
+    } catch {
+      toast.error("Failed to create task");
+    } finally {
+      setCreateLoading(false);
+    }
   };
 
-  const handleAddUpdate = () => {
+  const handleAddUpdate = async () => {
     if (!selected || !updMsg.trim()) {
       toast.error("Add a message to log work");
       return;
     }
 
-    const files = updFiles
-      ? updFiles.split(",").map((s) => s.trim()).filter(Boolean)
-      : [];
+    try {
+      setUpdateLoading(true);
 
-    const u: TaskUpdate = {
-      id: `U${Date.now()}`,
-      message: updMsg,
-      files,
-      timeSpent: Number(updTime) || 0,
-      by: currentUser?.id || "SYSTEM",
-      byName: currentUser?.name,
-      createdAt: new Date().toISOString(),
-    };
+      const files = updFiles
+        ? updFiles
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
 
-    addUpdate(selected.id, u);
+      const payload = {
+        message: updMsg,
+        files,
+        timeSpent: Number(updTime) || 0,
+      };
 
-    const nextSelected = {
-      ...selected,
-      updates: [...selected.updates, u],
-      progressNote: updMsg,
-      attachments: [...(selected.attachments || []), ...files],
-      timeSpent: (selected.timeSpent || 0) + (Number(updTime) || 0),
-    };
+      const res = await axios.post(
+        `${API_URL}/works/${selected.id}/update`,
+        payload,
+        getAuthConfig()
+      );
 
-    updateTask(selected.id, {
-      progressNote: updMsg,
-      attachments: nextSelected.attachments,
-      timeSpent: nextSelected.timeSpent,
-    });
+      const updatedTask = formatWork(res.data.data);
 
-    setSelected(nextSelected);
-    setUpdMsg("");
-    setUpdFiles("");
-    setUpdTime(1);
-    toast.success("Work update added");
+      setTasks((prev) =>
+        prev.map((task) => (task.id === selected.id ? updatedTask : task))
+      );
+
+      setSelected(updatedTask);
+      setUpdMsg("");
+      setUpdFiles("");
+      setUpdTime(1);
+
+      toast.success("Work update saved");
+    } catch {
+      toast.error("Failed to save work update");
+    } finally {
+      setUpdateLoading(false);
+    }
   };
 
-  const handleStatus = (s: TaskStatus) => {
+  const handleStatus = async (status: TaskStatus) => {
     if (!selected) return;
 
-    if (isEmployee && s !== "Review" && s !== "In Progress") {
+    if (isEmployee && status !== "Review" && status !== "In Progress") {
       toast.error("Employees can only start work or submit for review");
       return;
     }
 
-    updateTask(selected.id, { status: s });
-    setSelected({ ...selected, status: s });
-    toast.success(`Status changed to ${s}`);
+    try {
+      setStatusLoading(status);
+
+      await axios.put(
+        `${API_URL}/works/${selected.id}/status`,
+        { status },
+        getAuthConfig()
+      );
+
+      const updated = { ...selected, status };
+
+      setTasks((prev) =>
+        prev.map((task) => (task.id === selected.id ? updated : task))
+      );
+
+      setSelected(updated);
+      toast.success(`Status changed to ${status}`);
+    } catch {
+      toast.error("Failed to update status");
+    } finally {
+      setStatusLoading(null);
+    }
   };
 
-  const handleManagerReview = (status: "Completed" | "Revision") => {
+  const handleManagerReview = async (status: "Completed" | "Revision") => {
     if (!selected) return;
 
-    updateTask(selected.id, {
-      status,
-      managerReviewNote: reviewNote,
-    });
+    try {
+      setReviewLoading(status);
 
-    setSelected({
-      ...selected,
-      status,
-      managerReviewNote: reviewNote,
-    });
+      await axios.put(
+        `${API_URL}/works/${selected.id}/status`,
+        { status },
+        getAuthConfig()
+      );
 
-    setReviewNote("");
-    toast.success(status === "Completed" ? "Task approved" : "Revision requested");
+      const updated = {
+        ...selected,
+        status,
+        managerReviewNote: reviewNote,
+      };
+
+      setTasks((prev) =>
+        prev.map((task) => (task.id === selected.id ? updated : task))
+      );
+
+      setSelected(updated);
+      setReviewNote("");
+
+      toast.success(status === "Completed" ? "Task approved" : "Revision requested");
+    } catch {
+      toast.error("Failed to submit review");
+    } finally {
+      setReviewLoading(null);
+    }
+  };
+
+
+  const handleAssignTask = async (employeeId: string) => {
+    if (!selected) return;
+
+    const employee = employees.find((e: any) => (e._id || e.id) === employeeId);
+    if (!employee) {
+      toast.error("Employee not found");
+      return;
+    }
+
+    try {
+      setAssignLoading(true);
+
+      const payload = {
+        assignedTo: employeeId,
+        assignedPosition:
+          employee.position ||
+          employee.employeePosition ||
+          employee.role ||
+          employee.department ||
+          selected.assignedPosition,
+      };
+
+      let updatedFromApi: any = null;
+
+      try {
+        const res = await axios.put(
+          `${API_URL}/works/${selected.id}/assign`,
+          payload,
+          getAuthConfig()
+        );
+
+        updatedFromApi = res.data?.data || res.data?.work || res.data;
+      } catch {
+        const res = await axios.put(
+          `${API_URL}/works/${selected.id}`,
+          payload,
+          getAuthConfig()
+        );
+
+        updatedFromApi = res.data?.data || res.data?.work || res.data;
+      }
+
+      const updatedTask = updatedFromApi?._id
+        ? formatWork(updatedFromApi)
+        : {
+            ...selected,
+            assignedTo: employeeId,
+            assignedName:
+              employee.name ||
+              employee.fullName ||
+              employee.username ||
+              employee.email ||
+              "Assigned Employee",
+            assignedPosition: payload.assignedPosition,
+          };
+
+      setTasks((prev) =>
+        prev.map((task) => (task.id === selected.id ? updatedTask : task))
+      );
+
+      setSelected(updatedTask);
+      toast.success("Task assigned successfully");
+    } catch {
+      toast.error("Failed to assign task");
+    } finally {
+      setAssignLoading(false);
+    }
   };
 
   return (
@@ -313,13 +655,13 @@ export default function TasksPage() {
             Works / Tasks
           </h1>
           <p className="text-muted-foreground">
-            Pending, ongoing, review and completed work tracking
+            Create tasks under existing work and track progress
           </p>
         </div>
 
         {isAdminOrManager && (
-          <Button variant="gradient" onClick={() => setCreateOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
+          <Button variant="gradient" onClick={() => setCreateOpen(true)} disabled={loading}>
+            {loading ? <Spinner /> : <Plus className="w-4 h-4 mr-2" />}
             Create Task
           </Button>
         )}
@@ -347,18 +689,19 @@ export default function TasksPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
-        <div className="relative lg:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+        <div className="relative lg:col-span-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search task, project, client..."
+            disabled={loading}
+            placeholder="Search task, work, client, employee..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10"
           />
         </div>
 
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter} onValueChange={setStatusFilter} disabled={loading}>
           <SelectTrigger>
             <SelectValue placeholder="Status" />
           </SelectTrigger>
@@ -372,7 +715,7 @@ export default function TasksPage() {
           </SelectContent>
         </Select>
 
-        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+        <Select value={priorityFilter} onValueChange={setPriorityFilter} disabled={loading}>
           <SelectTrigger>
             <SelectValue placeholder="Priority" />
           </SelectTrigger>
@@ -386,7 +729,7 @@ export default function TasksPage() {
           </SelectContent>
         </Select>
 
-        <Select value={positionFilter} onValueChange={setPositionFilter}>
+        <Select value={positionFilter} onValueChange={setPositionFilter} disabled={loading}>
           <SelectTrigger>
             <SelectValue placeholder="Position" />
           </SelectTrigger>
@@ -401,24 +744,6 @@ export default function TasksPage() {
         </Select>
       </div>
 
-      {branches.length > 0 && (
-        <div className="w-full lg:w-64">
-          <Select value={branchFilter} onValueChange={setBranchFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="Branch" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All Branches</SelectItem>
-              {branches.map((b: any) => (
-                <SelectItem key={b.id} value={b.id}>
-                  {b.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
       <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -428,7 +753,10 @@ export default function TasksPage() {
                   Task
                 </th>
                 <th className="text-left p-3 text-xs font-semibold text-muted-foreground">
-                  Project / Client
+                  Parent Work
+                </th>
+                <th className="text-left p-3 text-xs font-semibold text-muted-foreground">
+                  Client
                 </th>
                 <th className="text-left p-3 text-xs font-semibold text-muted-foreground">
                   Assigned
@@ -449,9 +777,12 @@ export default function TasksPage() {
             </thead>
 
             <tbody className="divide-y divide-border">
-              {visible.map((t, i) => {
+              {loading ? (
+                <TableSkeleton />
+              ) : (
+                visible.map((t, i) => {
                 const overdue = isOverdue(t);
-                const days = daysToDeadline(t);
+                const days = daysToDeadline(t.dueDate);
 
                 return (
                   <motion.tr
@@ -465,19 +796,24 @@ export default function TasksPage() {
                     <td className="p-3">
                       <p className="font-medium text-sm">{t.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        {t.serviceType || "General"} • {branchName(t.branchId)}
+                        {t.serviceType || "General"}
                       </p>
                     </td>
 
                     <td className="p-3 text-sm">
-                      <p>{projName(t.projectId)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {custName(t.customerId)}
-                      </p>
+                      {t.parentWorkTitle ? (
+                        <Badge variant="outline">{t.parentWorkTitle}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">Main Work</span>
+                      )}
                     </td>
 
                     <td className="p-3 text-sm">
-                      <p>{empName(t.assignedTo)}</p>
+                      <p>{custName(t.customerId, t.customerName)}</p>
+                    </td>
+
+                    <td className="p-3 text-sm">
+                      <p>{empName(t.assignedTo, t.assignedName)}</p>
                       <p className="text-xs text-muted-foreground">
                         {t.assignedPosition || "—"}
                       </p>
@@ -524,12 +860,13 @@ export default function TasksPage() {
                     </td>
                   </motion.tr>
                 );
-              })}
+              })
+              )}
 
-              {visible.length === 0 && (
+              {!loading && visible.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="p-6 text-center text-sm text-muted-foreground"
                   >
                     No tasks found
@@ -548,35 +885,41 @@ export default function TasksPage() {
           </DialogHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Select
+              disabled={createLoading}
+              value={form.parentWorkId}
+              onValueChange={handleParentWorkChange}
+            >
+              <SelectTrigger className="md:col-span-2">
+                <SelectValue placeholder="Select Existing Work / Project" />
+              </SelectTrigger>
+              <SelectContent>
+                {tasks.map((work: any) => (
+                  <SelectItem key={work.id} value={work.id}>
+                    {work.title} - {work.customerName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <Input
+              disabled={createLoading}
               placeholder="Task Title"
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
             />
 
             <Input
+              disabled={createLoading}
               placeholder="Service Type"
               value={form.serviceType}
-              onChange={(e) => setForm({ ...form, serviceType: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, serviceType: e.target.value })
+              }
             />
 
             <Select
-              value={form.projectId}
-              onValueChange={(v) => setForm({ ...form, projectId: v })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select Project" />
-              </SelectTrigger>
-              <SelectContent>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select
+              disabled={createLoading}
               value={form.customerId}
               onValueChange={(v) => setForm({ ...form, customerId: v })}
             >
@@ -584,15 +927,26 @@ export default function TasksPage() {
                 <SelectValue placeholder="Select Client" />
               </SelectTrigger>
               <SelectContent>
-                {customers.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
+                {customers.map((c: any) => {
+                  const id = c._id || c.id;
+                  const name =
+                    c.name ||
+                    c.customerName ||
+                    c.clientName ||
+                    c.companyName ||
+                    "Unnamed Customer";
+
+                  return (
+                    <SelectItem key={id} value={id}>
+                      {name}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
 
             <Select
+              disabled={createLoading}
               value={form.assignedPosition}
               onValueChange={(v) =>
                 setForm({ ...form, assignedPosition: v, assignedTo: "" })
@@ -611,22 +965,35 @@ export default function TasksPage() {
             </Select>
 
             <Select
+              disabled={createLoading}
               value={form.assignedTo}
               onValueChange={(v) => setForm({ ...form, assignedTo: v })}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Assigned Employee" />
+                <SelectValue
+  placeholder={
+    form.assignedTo
+      ? empName(form.assignedTo, "Assigned Employee")
+      : "Assigned Employee"
+  }
+/>
               </SelectTrigger>
               <SelectContent>
-                {suggestedEmployees.map((e: any) => (
-                  <SelectItem key={e.id} value={e.id}>
-                    {e.name}
-                  </SelectItem>
-                ))}
+                {suggestedEmployees.map((e: any) => {
+                  const id = e._id || e.id;
+                  const name = e.name || e.fullName || e.username || e.email;
+
+                  return (
+                    <SelectItem key={id} value={id}>
+                      {name}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
 
             <Select
+              disabled={createLoading}
               value={form.priority}
               onValueChange={(v) => setForm({ ...form, priority: v })}
             >
@@ -643,12 +1010,14 @@ export default function TasksPage() {
             </Select>
 
             <Input
+              disabled={createLoading}
               type="date"
               value={form.deadline}
               onChange={(e) => setForm({ ...form, deadline: e.target.value })}
             />
 
             <Input
+              disabled={createLoading}
               type="number"
               placeholder="SLA Days"
               value={form.slaDays}
@@ -657,25 +1026,8 @@ export default function TasksPage() {
               }
             />
 
-            {branches.length > 0 && (
-              <Select
-                value={form.branchId}
-                onValueChange={(v) => setForm({ ...form, branchId: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Branch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {branches.map((b: any) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
             <Textarea
+              disabled={createLoading}
               className="md:col-span-2"
               placeholder="Task notes"
               value={form.notes}
@@ -683,8 +1035,9 @@ export default function TasksPage() {
             />
           </div>
 
-          <Button variant="gradient" onClick={handleCreateTask}>
-            Create Task
+          <Button variant="gradient" onClick={handleCreateTask} disabled={createLoading}>
+            {createLoading && <Spinner />}
+            {createLoading ? "Creating..." : "Create Task"}
           </Button>
         </DialogContent>
       </Dialog>
@@ -700,13 +1053,24 @@ export default function TasksPage() {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className="p-3 rounded-lg bg-muted/40">
-                    <p className="text-xs text-muted-foreground">Project</p>
-                    <p className="font-medium">{projName(selected.projectId)}</p>
+                    <p className="text-xs text-muted-foreground">Parent Work</p>
+                    <p className="font-medium">
+                      {selected.parentWorkTitle || "Main Work"}
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-muted/40">
+                    <p className="text-xs text-muted-foreground">Client</p>
+                    <p className="font-medium">
+                      {custName(selected.customerId, selected.customerName)}
+                    </p>
                   </div>
 
                   <div className="p-3 rounded-lg bg-muted/40">
                     <p className="text-xs text-muted-foreground">Owner</p>
-                    <p className="font-medium">{empName(selected.assignedTo)}</p>
+                    <p className="font-medium">
+                      {empName(selected.assignedTo, selected.assignedName)}
+                    </p>
                   </div>
 
                   <div className="p-3 rounded-lg bg-muted/40">
@@ -716,10 +1080,48 @@ export default function TasksPage() {
                     </p>
                   </div>
 
+                  {isAdminOrManager && (
+                    <div className="p-3 rounded-lg bg-muted/40 col-span-2">
+                      <p className="text-xs text-muted-foreground mb-2">Assign / Reassign</p>
+                      <Select
+                        value={selected.assignedTo || ""}
+                        onValueChange={handleAssignTask}
+                        disabled={assignLoading}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select employee" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {employees.map((e: any) => {
+                            const id = e._id || e.id;
+                            const name =
+                              e.name || e.fullName || e.username || e.email || "Employee";
+                            const position =
+                              e.position || e.employeePosition || e.role || e.department || "Employee";
+
+                            return (
+                              <SelectItem key={id} value={id}>
+                                {name} - {position}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      {assignLoading && (
+                        <p className="mt-2 text-xs text-muted-foreground flex items-center">
+                          <Spinner className="w-3 h-3 mr-2" />
+                          Updating assignment...
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <div className="p-3 rounded-lg bg-muted/40">
                     <p className="text-xs text-muted-foreground">Deadline</p>
                     <p className="font-medium">
-                      {new Date(selected.deadline).toLocaleDateString("en-IN")}
+                      {selected.dueDate
+                        ? new Date(selected.dueDate).toLocaleDateString("en-IN")
+                        : "No date"}
                     </p>
                   </div>
                 </div>
@@ -733,9 +1135,17 @@ export default function TasksPage() {
                         size="sm"
                         variant={selected.status === s ? "gradient" : "outline"}
                         onClick={() => handleStatus(s)}
-                        disabled={isEmployee && s !== "In Progress" && s !== "Review"}
+                        disabled={
+                          !!statusLoading ||
+                          (isEmployee && s !== "In Progress" && s !== "Review")
+                        }
                       >
-                        {s === "Review" && isEmployee ? (
+                        {statusLoading === s ? (
+                          <>
+                            <Spinner className="w-3 h-3 mr-1" />
+                            Updating...
+                          </>
+                        ) : s === "Review" && isEmployee ? (
                           <>
                             <Send className="w-3 h-3 mr-1" />
                             Submit Review
@@ -751,6 +1161,7 @@ export default function TasksPage() {
                 <div>
                   <p className="text-sm font-semibold mb-2">Add Work Update</p>
                   <Textarea
+                    disabled={updateLoading}
                     placeholder="What did you do?"
                     value={updMsg}
                     onChange={(e) => setUpdMsg(e.target.value)}
@@ -758,12 +1169,14 @@ export default function TasksPage() {
 
                   <div className="grid grid-cols-2 gap-2 mt-2">
                     <Input
+                      disabled={updateLoading}
                       placeholder="Files / links comma separated"
                       value={updFiles}
                       onChange={(e) => setUpdFiles(e.target.value)}
                     />
 
                     <Input
+                      disabled={updateLoading}
                       type="number"
                       min={0}
                       step={0.5}
@@ -780,9 +1193,10 @@ export default function TasksPage() {
                     className="mt-2"
                     variant="gradient"
                     onClick={handleAddUpdate}
+                    disabled={updateLoading}
                   >
-                    <Plus className="w-3 h-3 mr-1" />
-                    Log Update
+                    {updateLoading ? <Spinner className="w-3 h-3 mr-1" /> : <Plus className="w-3 h-3 mr-1" />}
+                    {updateLoading ? "Saving..." : "Log Update"}
                   </Button>
                 </div>
 
@@ -791,6 +1205,7 @@ export default function TasksPage() {
                     <p className="text-sm font-semibold mb-2">Manager Review</p>
 
                     <Textarea
+                      disabled={!!reviewLoading}
                       placeholder="Review note"
                       value={reviewNote}
                       onChange={(e) => setReviewNote(e.target.value)}
@@ -801,18 +1216,20 @@ export default function TasksPage() {
                         size="sm"
                         variant="gradient"
                         onClick={() => handleManagerReview("Completed")}
+                        disabled={!!reviewLoading}
                       >
-                        <CheckCircle2 className="w-3 h-3 mr-1" />
-                        Approve
+                        {reviewLoading === "Completed" ? <Spinner className="w-3 h-3 mr-1" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
+                        {reviewLoading === "Completed" ? "Approving..." : "Approve"}
                       </Button>
 
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => handleManagerReview("Revision")}
+                        disabled={!!reviewLoading}
                       >
-                        <RotateCcw className="w-3 h-3 mr-1" />
-                        Request Revision
+                        {reviewLoading === "Revision" ? <Spinner className="w-3 h-3 mr-1" /> : <RotateCcw className="w-3 h-3 mr-1" />}
+                        {reviewLoading === "Revision" ? "Sending..." : "Request Revision"}
                       </Button>
                     </div>
                   </div>
@@ -839,11 +1256,16 @@ export default function TasksPage() {
                       </p>
                     )}
 
-                    {[...(selected.updates || [])].reverse().map((u) => (
-                      <div key={u.id} className="p-2 rounded-lg bg-muted/30 text-sm">
+                    {[...(selected.updates || [])].reverse().map((u: any) => (
+                      <div
+                        key={u.id || u._id || u.createdAt}
+                        className="p-2 rounded-lg bg-muted/30 text-sm"
+                      >
                         <div className="flex justify-between text-xs text-muted-foreground mb-1">
                           <span className="font-medium">{u.byName || u.by}</span>
-                          <span>{new Date(u.createdAt).toLocaleString("en-IN")}</span>
+                          <span>
+                            {new Date(u.createdAt).toLocaleString("en-IN")}
+                          </span>
                         </div>
 
                         <p>{u.message}</p>

@@ -1,161 +1,369 @@
-import { motion } from 'framer-motion';
+import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import {
   Phone,
   PhoneCall,
-  PhoneOff,
   CheckCircle,
   Clock,
   Calendar,
   TrendingUp,
-  Users,
   Target,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { useCRMStore } from '@/store/crmStore';
-import { callLogs } from '@/data/dummyData';
+  UserCheck,
+  AlertTriangle,
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+
+const API_URL = import.meta.env.VITE_API_URL || "https://digitalness-backend.onrender.com/api";
+
+interface User {
+  _id: string;
+  id?: string;
+  name?: string;
+  fullName?: string;
+  username?: string;
+  email?: string;
+  role?: string;
+  department?: string;
+  branchId?: string;
+}
+
+interface Lead {
+  _id: string;
+  name: string;
+  businessType?: string;
+  contactNumber?: string;
+  email?: string;
+  status?: string;
+  city?: string;
+  source?: string;
+  leadScore?: string;
+  lastContactDate?: string;
+  followUpDate?: string;
+  nextFollowUpDate?: string;
+  assignedTo?: string | User;
+  callLogs?: any[];
+  requirements?: string[];
+  notes?: string[];
+}
 
 export default function TelecallerPage() {
-  const { leads, employees, currentUser } = useCRMStore();
+  const { toast } = useToast();
 
-  // Filter leads assigned to telecallers
-  const telecallerLeads = leads.filter((lead) => {
-    const emp = employees.find((e) => e.id === lead.assignedTo);
-    return emp?.role === 'Telecaller';
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [employees, setEmployees] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const getAuthConfig = () => {
+    const token =
+      localStorage.getItem("token") ||
+      localStorage.getItem("authToken") ||
+      localStorage.getItem("accessToken");
+
+    return {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
+
+  const getArrayData = (data: any): any[] => {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.leads)) return data.leads;
+    if (Array.isArray(data?.users)) return data.users;
+    return [];
+  };
+
+  const getCurrentUserFromStorage = () => {
+    try {
+      const stored =
+        localStorage.getItem("user") ||
+        localStorage.getItem("currentUser") ||
+        localStorage.getItem("authUser");
+
+      if (!stored) return null;
+
+      const user = JSON.parse(stored);
+
+      return {
+        _id: user._id || user.id,
+        id: user.id || user._id,
+        name: user.name || user.fullName || user.username,
+        email: user.email,
+        role: user.role,
+        branchId: user.branchId,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const getAssignedId = (lead: Lead) => {
+    if (!lead.assignedTo) return "";
+    if (typeof lead.assignedTo === "object") return lead.assignedTo._id || lead.assignedTo.id || "";
+    return lead.assignedTo;
+  };
+
+  const getAssignedName = (lead: Lead) => {
+    if (!lead.assignedTo) return "Unassigned";
+
+    if (typeof lead.assignedTo === "object") {
+      return (
+        lead.assignedTo.name ||
+        lead.assignedTo.fullName ||
+        lead.assignedTo.username ||
+        lead.assignedTo.email ||
+        "Employee"
+      );
+    }
+
+    const emp = employees.find((e) => e._id === lead.assignedTo || e.id === lead.assignedTo);
+
+    return emp?.name || emp?.fullName || emp?.username || emp?.email || "Employee";
+  };
+
+  const fetchEmployees = async () => {
+    try {
+      const res = await fetch(`${API_URL}/users`, getAuthConfig());
+      const data = await res.json();
+
+      if (res.ok) {
+        setEmployees(getArrayData(data));
+      }
+    } catch {
+      console.log("Unable to fetch employees");
+    }
+  };
+
+  const fetchLeads = async () => {
+    try {
+      const res = await fetch(`${API_URL}/leads`, getAuthConfig());
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.message || "Failed to fetch leads");
+
+      const user = getCurrentUserFromStorage();
+      let allLeads = getArrayData(data);
+
+      if (
+        user &&
+        user.role !== "Admin" &&
+        user.role !== "admin" &&
+        user.role !== "Operational Manager"
+      ) {
+        allLeads = allLeads.filter((lead: Lead) => {
+          const assignedId = getAssignedId(lead);
+          return String(assignedId) === String(user._id);
+        });
+      }
+
+      setLeads(allLeads);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  useEffect(() => {
+    const user = getCurrentUserFromStorage();
+    setCurrentUser(user);
+
+    const loadData = async () => {
+      setLoading(true);
+      await fetchEmployees();
+      await fetchLeads();
+      setLoading(false);
+    };
+
+    loadData();
+  }, []);
+
+  const allCallLogs = useMemo(() => {
+    return leads.flatMap((lead) =>
+      (lead.callLogs || []).map((log) => ({
+        ...log,
+        lead,
+        leadId: lead._id,
+        leadName: lead.name,
+        contactNumber: lead.contactNumber,
+        businessType: lead.businessType,
+        dateTime: log.calledAt || log.dateTime || log.createdAt,
+        result: log.callStatus || log.result || lead.status,
+        duration: log.duration || 0,
+      }))
+    );
+  }, [leads]);
+
+  const today = new Date().toISOString().split("T")[0];
+
+  const todayCalls = allCallLogs.filter((log) => {
+    if (!log.dateTime) return false;
+    return new Date(log.dateTime).toISOString().split("T")[0] === today;
   });
 
-  const todayCalls = callLogs.filter(
-    (log) => new Date(log.dateTime).toDateString() === new Date().toDateString()
-  );
-
   const todayFollowups = leads.filter((lead) => {
-    return lead.followUpDate === new Date().toISOString().split('T')[0];
+    const followDate = lead.followUpDate || lead.nextFollowUpDate;
+    if (!followDate) return false;
+    return new Date(followDate).toISOString().split("T")[0] === today;
+  });
+
+  const overdueFollowups = leads.filter((lead) => {
+    const followDate = lead.followUpDate || lead.nextFollowUpDate;
+    if (!followDate || lead.status === "Own Close") return false;
+
+    const due = new Date(followDate);
+    const now = new Date();
+
+    due.setHours(0, 0, 0, 0);
+    now.setHours(0, 0, 0, 0);
+
+    return due < now;
   });
 
   const stats = {
-    totalCalls: callLogs.length,
+    assignedLeads: leads.length,
+    totalCalls: allCallLogs.length,
     todayCalls: todayCalls.length,
-    followups: leads.filter((l) => l.status === 'Follow Up' || l.status === 'Call Back').length,
-    ownClose: leads.filter((l) => l.status === 'Own Close').length,
-    conversionRate: Math.round(
-      (leads.filter((l) => l.status === 'Own Close').length / leads.length) * 100
-    ),
+    followups: leads.filter(
+      (lead) => lead.status === "Follow Up" || lead.status === "Call Back"
+    ).length,
+    todayFollowups: todayFollowups.length,
+    overdueFollowups: overdueFollowups.length,
+    ownClose: leads.filter((lead) => lead.status === "Own Close").length,
+    ownLoss: leads.filter((lead) => lead.status === "Own Loss").length,
+    conversionRate: leads.length
+      ? Math.round(
+          (leads.filter((lead) => lead.status === "Own Close").length / leads.length) * 100
+        )
+      : 0,
   };
+
+  const statusBadge = (status?: string) => {
+    if (status === "Own Close") return "success";
+    if (status === "Own Loss" || status === "Failed") return "destructive";
+    if (status === "Follow Up" || status === "Call Back") return "warning";
+    if (status === "Demo Completed") return "info";
+    return "secondary";
+  };
+
+  if (loading) {
+    return (
+      <div className="text-center py-10 text-muted-foreground">
+        Loading telecaller data...
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-2xl font-heading font-bold text-foreground">
           Telecaller Dashboard
         </h1>
         <p className="text-muted-foreground">
-          Manage calls, follow-ups, and lead conversions
+          {currentUser?.name ? `${currentUser.name} • ` : ""}
+          Manage assigned leads, calls, follow-ups and conversions
         </p>
       </motion.div>
 
-      {/* Stats Cards */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="grid grid-cols-2 md:grid-cols-5 gap-4"
+        className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-4"
       >
         <div className="p-5 rounded-xl bg-card border border-border shadow-card">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 rounded-lg bg-primary/10 text-primary">
-              <Phone className="w-5 h-5" />
-            </div>
-            <span className="text-sm text-muted-foreground">Total Calls</span>
-          </div>
-          <p className="text-3xl font-heading font-bold text-foreground">{stats.totalCalls}</p>
+          <UserCheck className="w-5 h-5 text-primary mb-2" />
+          <p className="text-sm text-muted-foreground">Assigned Leads</p>
+          <p className="text-2xl font-bold">{stats.assignedLeads}</p>
         </div>
-        <div className="p-5 rounded-xl gradient-accent text-accent-foreground shadow-card">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 rounded-lg bg-accent-foreground/20">
-              <PhoneCall className="w-5 h-5" />
-            </div>
-            <span className="text-sm text-accent-foreground/80">Today's Calls</span>
-          </div>
-          <p className="text-3xl font-heading font-bold">{stats.todayCalls}</p>
+
+        <div className="p-5 rounded-xl bg-card border border-border shadow-card">
+          <Phone className="w-5 h-5 text-primary mb-2" />
+          <p className="text-sm text-muted-foreground">Total Calls</p>
+          <p className="text-2xl font-bold">{stats.totalCalls}</p>
         </div>
+
+        <div className="p-5 rounded-xl bg-info/10 border border-info/30">
+          <PhoneCall className="w-5 h-5 text-info mb-2" />
+          <p className="text-sm text-muted-foreground">Today Calls</p>
+          <p className="text-2xl font-bold text-info">{stats.todayCalls}</p>
+        </div>
+
         <div className="p-5 rounded-xl bg-warning/10 border border-warning/30">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 rounded-lg bg-warning/20 text-warning">
-              <Clock className="w-5 h-5" />
-            </div>
-            <span className="text-sm text-muted-foreground">Follow-ups</span>
-          </div>
-          <p className="text-3xl font-heading font-bold text-warning">{stats.followups}</p>
+          <Clock className="w-5 h-5 text-warning mb-2" />
+          <p className="text-sm text-muted-foreground">Follow-ups</p>
+          <p className="text-2xl font-bold text-warning">{stats.followups}</p>
         </div>
+
+        <div className="p-5 rounded-xl bg-warning/10 border border-warning/30">
+          <Calendar className="w-5 h-5 text-warning mb-2" />
+          <p className="text-sm text-muted-foreground">Today Follow-ups</p>
+          <p className="text-2xl font-bold text-warning">{stats.todayFollowups}</p>
+        </div>
+
+        <div className="p-5 rounded-xl bg-destructive/10 border border-destructive/30">
+          <AlertTriangle className="w-5 h-5 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Overdue</p>
+          <p className="text-2xl font-bold text-destructive">{stats.overdueFollowups}</p>
+        </div>
+
         <div className="p-5 rounded-xl bg-success/10 border border-success/30">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 rounded-lg bg-success/20 text-success">
-              <CheckCircle className="w-5 h-5" />
-            </div>
-            <span className="text-sm text-muted-foreground">Own Close</span>
-          </div>
-          <p className="text-3xl font-heading font-bold text-success">{stats.ownClose}</p>
+          <CheckCircle className="w-5 h-5 text-success mb-2" />
+          <p className="text-sm text-muted-foreground">Own Close</p>
+          <p className="text-2xl font-bold text-success">{stats.ownClose}</p>
         </div>
+
         <div className="p-5 rounded-xl gradient-primary text-primary-foreground shadow-card">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 rounded-lg bg-primary-foreground/20">
-              <TrendingUp className="w-5 h-5" />
-            </div>
-            <span className="text-sm text-primary-foreground/80">Conversion</span>
-          </div>
-          <p className="text-3xl font-heading font-bold">{stats.conversionRate}%</p>
+          <TrendingUp className="w-5 h-5 mb-2" />
+          <p className="text-sm text-primary-foreground/80">Conversion</p>
+          <p className="text-2xl font-bold">{stats.conversionRate}%</p>
         </div>
       </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Today's Follow-ups */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="bg-card rounded-xl border border-border shadow-card p-6"
-        >
+        <div className="bg-card rounded-xl border border-border shadow-card p-6">
           <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
+            <h3 className="text-lg font-heading font-semibold flex items-center gap-2">
               <Calendar className="w-5 h-5 text-accent" />
-              <h3 className="text-lg font-heading font-semibold text-foreground">
-                Today's Follow-ups
-              </h3>
-            </div>
+              Today’s Follow-ups
+            </h3>
             <Badge variant="warning">{todayFollowups.length} pending</Badge>
           </div>
+
           <div className="space-y-3">
             {todayFollowups.length > 0 ? (
-              todayFollowups.map((lead, index) => (
-                <motion.div
-                  key={lead.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+              todayFollowups.map((lead) => (
+                <div
+                  key={lead._id}
+                  className="flex items-center justify-between p-4 rounded-lg bg-muted/50"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-primary font-bold">
-                      {lead.name.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">{lead.name}</p>
-                      <p className="text-sm text-muted-foreground">{lead.businessType}</p>
-                    </div>
+                  <div>
+                    <p className="font-medium">{lead.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {lead.businessType || "-"} • {lead.contactNumber || "-"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Assigned: {getAssignedName(lead)}
+                    </p>
                   </div>
-                  <div className="flex gap-2">
+
+                  <div className="flex items-center gap-2">
+                    <Badge variant={statusBadge(lead.status) as any}>
+                      {lead.status || "New"}
+                    </Badge>
                     <Button size="icon" variant="ghost" className="text-accent">
                       <PhoneCall className="w-4 h-4" />
                     </Button>
-                    <Button size="icon" variant="ghost" className="text-success">
-                      <CheckCircle className="w-4 h-4" />
-                    </Button>
                   </div>
-                </motion.div>
+                </div>
               ))
             ) : (
               <div className="text-center py-8 text-muted-foreground">
@@ -164,129 +372,182 @@ export default function TelecallerPage() {
               </div>
             )}
           </div>
-        </motion.div>
+        </div>
 
-        {/* Recent Call Logs */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="bg-card rounded-xl border border-border shadow-card p-6"
-        >
-          <div className="flex items-center gap-2 mb-6">
+        <div className="bg-card rounded-xl border border-border shadow-card p-6">
+          <h3 className="text-lg font-heading font-semibold flex items-center gap-2 mb-6">
             <Phone className="w-5 h-5 text-primary" />
-            <h3 className="text-lg font-heading font-semibold text-foreground">
-              Recent Call Logs
-            </h3>
-          </div>
+            Recent Call Logs
+          </h3>
+
           <div className="space-y-3">
-            {callLogs.slice(0, 5).map((log, index) => {
-              const lead = leads.find((l) => l.id === log.leadId);
-              return (
-                <motion.div
-                  key={log.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors"
-                >
-                  <div className="p-2 rounded-lg bg-info/10 text-info mt-0.5">
-                    <Phone className="w-4 h-4" />
+            {allCallLogs.slice(0, 8).map((log, index) => (
+              <div
+                key={log._id || `${log.leadId}-${index}`}
+                className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50"
+              >
+                <div className="p-2 rounded-lg bg-info/10 text-info mt-0.5">
+                  <Phone className="w-4 h-4" />
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium">{log.leadName}</p>
+                    <span className="text-xs text-muted-foreground">
+                      {log.duration ? `${log.duration} min` : "—"}
+                    </span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium text-foreground">{lead?.name || 'Unknown'}</p>
-                      <span className="text-xs text-muted-foreground">{log.duration} min</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground truncate">{log.notes}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="secondary" className="text-xs">{log.result}</Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(log.dateTime).toLocaleString('en-IN', {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true,
-                        })}
-                      </span>
-                    </div>
+
+                  <p className="text-sm text-muted-foreground truncate">
+                    {log.notes || "No notes added"}
+                  </p>
+
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant={statusBadge(log.result) as any} className="text-xs">
+                      {log.result || "Call"}
+                    </Badge>
+
+                    <span className="text-xs text-muted-foreground">
+                      {log.dateTime
+                        ? new Date(log.dateTime).toLocaleString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            hour: "numeric",
+                            minute: "2-digit",
+                            hour12: true,
+                          })
+                        : "—"}
+                    </span>
                   </div>
-                </motion.div>
-              );
-            })}
+                </div>
+              </div>
+            ))}
+
+            {allCallLogs.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <Phone className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                <p>No call logs yet</p>
+              </div>
+            )}
           </div>
-        </motion.div>
+        </div>
       </div>
 
-      {/* Leads Assigned */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
-        className="bg-card rounded-xl border border-border shadow-card p-6"
-      >
+      <div className="bg-card rounded-xl border border-border shadow-card p-6 overflow-x-auto">
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
+          <h3 className="text-lg font-heading font-semibold flex items-center gap-2">
             <Target className="w-5 h-5 text-accent" />
-            <h3 className="text-lg font-heading font-semibold text-foreground">
-              Assigned Leads
-            </h3>
-          </div>
-          <span className="text-sm text-muted-foreground">{telecallerLeads.length} leads</span>
+            Telecaller Assigned Leads
+          </h3>
+
+          <span className="text-sm text-muted-foreground">
+            {leads.length} leads
+          </span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="border-b border-border">
-              <tr>
-                <th className="text-left py-3 text-sm font-medium text-muted-foreground">Lead</th>
-                <th className="text-left py-3 text-sm font-medium text-muted-foreground">Business</th>
-                <th className="text-left py-3 text-sm font-medium text-muted-foreground">Status</th>
-                <th className="text-left py-3 text-sm font-medium text-muted-foreground">Last Contact</th>
-                <th className="text-left py-3 text-sm font-medium text-muted-foreground">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {telecallerLeads.slice(0, 5).map((lead) => (
-                <tr key={lead.id} className="hover:bg-muted/30 transition-colors">
-                  <td className="py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
-                        {lead.name.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="font-medium text-sm">{lead.name}</p>
-                        <p className="text-xs text-muted-foreground">{lead.contactNumber}</p>
-                      </div>
+
+        <table className="w-full min-w-[850px]">
+          <thead className="border-b border-border">
+            <tr>
+              <th className="text-left py-3 text-sm font-medium text-muted-foreground">
+                Lead
+              </th>
+              <th className="text-left py-3 text-sm font-medium text-muted-foreground">
+                Business
+              </th>
+              <th className="text-left py-3 text-sm font-medium text-muted-foreground">
+                Assigned To
+              </th>
+              <th className="text-left py-3 text-sm font-medium text-muted-foreground">
+                Status
+              </th>
+              <th className="text-left py-3 text-sm font-medium text-muted-foreground">
+                Follow-up
+              </th>
+              <th className="text-left py-3 text-sm font-medium text-muted-foreground">
+                Calls
+              </th>
+              <th className="text-left py-3 text-sm font-medium text-muted-foreground">
+                Last Contact
+              </th>
+              <th className="text-left py-3 text-sm font-medium text-muted-foreground">
+                Action
+              </th>
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-border">
+            {leads.map((lead) => (
+              <tr key={lead._id} className="hover:bg-muted/30 transition-colors">
+                <td className="py-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
+                      {lead.name?.charAt(0) || "L"}
                     </div>
-                  </td>
-                  <td className="py-3 text-sm text-muted-foreground">{lead.businessType}</td>
-                  <td className="py-3">
-                    <Badge variant={
-                      lead.status === 'Own Close' ? 'success' :
-                      lead.status === 'Own Loss' ? 'destructive' :
-                      lead.status === 'Follow Up' ? 'warning' :
-                      'secondary'
-                    }>
-                      {lead.status}
-                    </Badge>
-                  </td>
-                  <td className="py-3 text-sm text-muted-foreground">
-                    {new Date(lead.lastContactDate).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'short',
-                    })}
-                  </td>
-                  <td className="py-3">
-                    <Button size="sm" variant="ghost" className="text-accent">
-                      <PhoneCall className="w-4 h-4 mr-1" />
-                      Call
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
+
+                    <div>
+                      <p className="font-medium text-sm">{lead.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {lead.contactNumber || "-"}
+                      </p>
+                    </div>
+                  </div>
+                </td>
+
+                <td className="py-3 text-sm text-muted-foreground">
+                  {lead.businessType || "-"}
+                </td>
+
+                <td className="py-3 text-sm text-muted-foreground">
+                  {getAssignedName(lead)}
+                </td>
+
+                <td className="py-3">
+                  <Badge variant={statusBadge(lead.status) as any}>
+                    {lead.status || "New"}
+                  </Badge>
+                </td>
+
+                <td className="py-3 text-sm text-muted-foreground">
+                  {lead.followUpDate || lead.nextFollowUpDate
+                    ? new Date(lead.followUpDate || lead.nextFollowUpDate || "").toLocaleDateString(
+                        "en-IN",
+                        { day: "numeric", month: "short", year: "numeric" }
+                      )
+                    : "—"}
+                </td>
+
+                <td className="py-3 text-sm text-muted-foreground">
+                  {lead.callLogs?.length || 0}
+                </td>
+
+                <td className="py-3 text-sm text-muted-foreground">
+                  {lead.lastContactDate
+                    ? new Date(lead.lastContactDate).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                      })
+                    : "—"}
+                </td>
+
+                <td className="py-3">
+                  <Button size="sm" variant="ghost" className="text-accent">
+                    <PhoneCall className="w-4 h-4 mr-1" />
+                    Call
+                  </Button>
+                </td>
+              </tr>
+            ))}
+
+            {leads.length === 0 && (
+              <tr>
+                <td colSpan={8} className="text-center py-8 text-muted-foreground">
+                  No telecaller leads assigned
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

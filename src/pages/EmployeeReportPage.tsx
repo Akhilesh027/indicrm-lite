@@ -1,313 +1,533 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import {
-  Users, Target, ClipboardList, CheckCircle, Clock, TrendingUp,
-  Award, BarChart3, Calendar, Phone, Star,
-} from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { useCRMStore } from '@/store/crmStore';
-import { useInvoiceStore } from '@/store/invoiceStore';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import {
-  BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend, RadarChart, Radar, PolarGrid,
-  PolarAngleAxis, PolarRadiusAxis,
-} from 'recharts';
+  Target,
+  CheckCircle,
+  Clock,
+  TrendingUp,
+  ClipboardList,
+  LifeBuoy,
+  PhoneCall,
+  AlertTriangle,
+  Timer,
+} from "lucide-react";
 
-const COLORS = [
-  'hsl(168, 75%, 40%)', 'hsl(210, 55%, 25%)', 'hsl(38, 92%, 50%)',
-  'hsl(0, 72%, 51%)', 'hsl(200, 80%, 50%)', 'hsl(280, 60%, 50%)',
-];
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+
+import {
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  Legend,
+  BarChart,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Bar,
+} from "recharts";
+
+const API_URL = import.meta.env.VITE_API_URL || "https://digitalness-backend.onrender.com/api";
+
+const COLORS = ["#00C49F", "#0088FE", "#FFBB28", "#FF8042", "#A855F7"];
+
+interface Employee {
+  _id: string;
+  name?: string;
+  fullName?: string;
+  username?: string;
+  email: string;
+  role: string;
+  department?: string;
+  status: string;
+  branchId: string | { _id: string; name: string };
+}
+
+interface Work {
+  _id: string;
+  title: string;
+  workType?: string;
+  customer?: { _id: string; name?: string; companyName?: string };
+  parentWorkId?: { _id: string; title?: string } | string | null;
+  status: string;
+  priority?: string;
+  assignedTo: any;
+  dueDate?: string;
+  slaDays?: number;
+  timeSpent?: number;
+  updates?: any[];
+}
+
+interface Lead {
+  _id: string;
+  name?: string;
+  status: string;
+  assignedTo: any;
+  callLogs?: any[];
+  followUpDate?: string;
+  nextFollowUpDate?: string;
+}
+
+interface Ticket {
+  _id: string;
+  status: string;
+  assignedTo: any;
+}
+
+function getArrayData(data: any) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.users)) return data.users;
+  if (Array.isArray(data?.works)) return data.works;
+  if (Array.isArray(data?.leads)) return data.leads;
+  if (Array.isArray(data?.tickets)) return data.tickets;
+  return [];
+}
+
+function getEmployeeName(emp?: Employee) {
+  return emp?.name || emp?.fullName || emp?.username || emp?.email || "Employee";
+}
+
+function assignedIncludesUser(assignedTo: any, userId: string) {
+  if (!assignedTo || !userId) return false;
+
+  const list = Array.isArray(assignedTo) ? assignedTo : [assignedTo];
+
+  return list.some((item) => {
+    if (!item) return false;
+    if (typeof item === "string") return String(item) === String(userId);
+    return String(item._id || item.id) === String(userId);
+  });
+}
+
+function getClientName(work: Work) {
+  return work.customer?.name || work.customer?.companyName || "Client";
+}
+
+function getParentWorkTitle(work: Work) {
+  if (!work.parentWorkId) return "Main Work";
+  if (typeof work.parentWorkId === "object") {
+    return work.parentWorkId.title || "Parent Work";
+  }
+  return "Parent Work";
+}
+
+function getBranchDisplay(branch: Employee["branchId"]) {
+  if (!branch) return "—";
+  if (typeof branch === "string") return branch;
+  return branch.name || branch._id;
+}
+
+function isOverdue(work: Work) {
+  if (!work.dueDate || work.status === "Completed") return false;
+
+  const today = new Date();
+  const due = new Date(work.dueDate);
+
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+
+  return due < today;
+}
 
 export default function EmployeeReportPage() {
-  const { employees, leads, projects, attendance } = useCRMStore();
-  const { deliverables } = useInvoiceStore();
-  const [selectedEmpId, setSelectedEmpId] = useState<string>(employees[0]?.id || '');
+  const { toast } = useToast();
 
-  const emp = employees.find((e) => e.id === selectedEmpId);
-  if (!emp) return <div className="p-6 text-muted-foreground">No employees found.</div>;
+  const token =
+    localStorage.getItem("token") ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("accessToken");
 
-  // Leads handled by this employee
-  const empLeads = leads.filter((l) => l.assignedTo === emp.id);
-  const leadsByStatus = [
-    { name: 'New', value: empLeads.filter((l) => l.status === 'New').length },
-    { name: 'Follow Up', value: empLeads.filter((l) => l.status === 'Follow Up' || l.status === 'Call Back').length },
-    { name: 'Demo Done', value: empLeads.filter((l) => l.status === 'Demo Completed').length },
-    { name: 'Won', value: empLeads.filter((l) => l.status === 'Own Close').length },
-    { name: 'Lost', value: empLeads.filter((l) => l.status === 'Own Loss').length },
-    { name: 'No Response', value: empLeads.filter((l) => l.status === 'No Response').length },
-  ].filter((s) => s.value > 0);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [works, setWorks] = useState<Work[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [selectedEmpId, setSelectedEmpId] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  // Projects assigned
-  const empProjects = projects.filter((p) => p.assignedTo.includes(emp.id));
-  const projectsByStatus = [
-    { name: 'Not Started', value: empProjects.filter((p) => p.status === 'Not Started').length },
-    { name: 'In Progress', value: empProjects.filter((p) => p.status === 'In Progress').length },
-    { name: 'Review', value: empProjects.filter((p) => p.status === 'Review').length },
-    { name: 'Completed', value: empProjects.filter((p) => p.status === 'Completed').length },
-  ].filter((s) => s.value > 0);
+  const fetchData = async () => {
+    if (!token) {
+      toast({
+        title: "Auth Error",
+        description: "No token found. Please login again.",
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
 
-  // Deliverables assigned
-  const empDeliverables = deliverables.filter((d) => d.assignedTo === emp.id);
-  const completedDeliverables = empDeliverables.filter((d) => d.status === 'Completed').length;
-  const pendingDeliverables = empDeliverables.filter((d) => d.status !== 'Completed').length;
+    try {
+      setLoading(true);
 
-  // Attendance
-  const empAttendance = attendance.filter((a) => a.employeeId === emp.id);
-  const presentDays = empAttendance.filter((a) => a.status === 'Present').length;
-  const absentDays = empAttendance.filter((a) => a.status === 'Absent').length;
-  const leaveDays = empAttendance.filter((a) => a.status === 'Leave').length;
+      const headers = {
+        Authorization: `Bearer ${token}`,
+      };
 
-  // Radar chart data for performance overview
-  const radarData = [
-    { metric: 'Tasks', value: Math.min(emp.performance.completedTasks / 3, 100) },
-    { metric: 'Success Rate', value: emp.performance.successRate },
-    { metric: 'Leads Won', value: empLeads.length > 0 ? Math.round((empLeads.filter((l) => l.status === 'Own Close').length / empLeads.length) * 100) : 0 },
-    { metric: 'Projects Done', value: empProjects.length > 0 ? Math.round((empProjects.filter((p) => p.status === 'Completed').length / empProjects.length) * 100) : 0 },
-    { metric: 'Attendance', value: empAttendance.length > 0 ? Math.round((presentDays / empAttendance.length) * 100) : 100 },
-    { metric: 'Deliverables', value: empDeliverables.length > 0 ? Math.round((completedDeliverables / empDeliverables.length) * 100) : 0 },
-  ];
+      const [usersRes, worksRes, leadsRes, ticketsRes] = await Promise.allSettled([
+        fetch(`${API_URL}/users`, { headers }),
+        fetch(`${API_URL}/works`, { headers }),
+        fetch(`${API_URL}/leads`, { headers }),
+        fetch(`${API_URL}/tickets`, { headers }),
+      ]);
 
-  const conversionRate = empLeads.length > 0
-    ? Math.round((empLeads.filter((l) => l.status === 'Own Close').length / empLeads.length) * 100)
+      const usersData =
+        usersRes.status === "fulfilled" && usersRes.value.ok
+          ? await usersRes.value.json()
+          : [];
+
+      const worksData =
+        worksRes.status === "fulfilled" && worksRes.value.ok
+          ? await worksRes.value.json()
+          : [];
+
+      const leadsData =
+        leadsRes.status === "fulfilled" && leadsRes.value.ok
+          ? await leadsRes.value.json()
+          : [];
+
+      const ticketsData =
+        ticketsRes.status === "fulfilled" && ticketsRes.value.ok
+          ? await ticketsRes.value.json()
+          : [];
+
+      const employeeList = getArrayData(usersData);
+
+      setEmployees(employeeList);
+      setWorks(getArrayData(worksData));
+      setLeads(getArrayData(leadsData));
+      setTickets(getArrayData(ticketsData));
+
+      if (employeeList.length && !selectedEmpId) {
+        setSelectedEmpId(employeeList[0]._id);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Data Fetch Failed",
+        description: error.message || "Unable to load employee report",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const employee = useMemo(
+    () => employees.find((emp) => emp._id === selectedEmpId),
+    [employees, selectedEmpId]
+  );
+
+  const employeeWorks = useMemo(
+    () => works.filter((work) => assignedIncludesUser(work.assignedTo, selectedEmpId)),
+    [works, selectedEmpId]
+  );
+
+  const employeeLeads = useMemo(
+    () => leads.filter((lead) => assignedIncludesUser(lead.assignedTo, selectedEmpId)),
+    [leads, selectedEmpId]
+  );
+
+  const employeeTickets = useMemo(
+    () =>
+      tickets.filter((ticket) =>
+        assignedIncludesUser(ticket.assignedTo, selectedEmpId)
+      ),
+    [tickets, selectedEmpId]
+  );
+
+  const totalCalls = employeeLeads.reduce(
+    (sum, lead) => sum + (lead.callLogs?.length || 0),
+    0
+  );
+
+  const completedWorks = employeeWorks.filter(
+    (work) => work.status === "Completed"
+  ).length;
+
+  const inProgressWorks = employeeWorks.filter(
+    (work) => work.status === "In Progress"
+  ).length;
+
+  const reviewWorks = employeeWorks.filter((work) => work.status === "Review").length;
+
+  const pendingWorks = employeeWorks.filter(
+    (work) => work.status !== "Completed"
+  ).length;
+
+  const overdueWorks = employeeWorks.filter(isOverdue).length;
+
+  const mainWorks = employeeWorks.filter((work) => !work.parentWorkId).length;
+
+  const childTasks = employeeWorks.filter((work) => work.parentWorkId).length;
+
+  const totalTimeSpent = employeeWorks.reduce(
+    (sum, work) => sum + Number(work.timeSpent || 0),
+    0
+  );
+
+  const wonLeads = employeeLeads.filter(
+    (lead) => lead.status === "Own Close" || lead.status === "Won"
+  ).length;
+
+  const openTickets = employeeTickets.filter(
+    (ticket) => ticket.status !== "Closed"
+  ).length;
+
+  const conversionRate = employeeLeads.length
+    ? Math.round((wonLeads / employeeLeads.length) * 100)
     : 0;
+
+  const telecallerLeads = employeeLeads.filter(
+    (lead) =>
+      lead.status === "Call Back" ||
+      lead.status === "Follow Up" ||
+      lead.status === "Own Close" ||
+      lead.status === "Own Loss"
+  );
+
+  const workChart = [
+    { name: "Completed", value: completedWorks },
+    { name: "In Progress", value: inProgressWorks },
+    { name: "Review", value: reviewWorks },
+    { name: "Pending", value: pendingWorks },
+  ].filter((item) => item.value > 0);
+
+  const ticketChart = [
+    {
+      name: "Open",
+      value: employeeTickets.filter((ticket) => ticket.status === "Open").length,
+    },
+    {
+      name: "In Progress",
+      value: employeeTickets.filter((ticket) => ticket.status === "In Progress")
+        .length,
+    },
+    {
+      name: "Resolved",
+      value: employeeTickets.filter((ticket) => ticket.status === "Resolved")
+        .length,
+    },
+    {
+      name: "Closed",
+      value: employeeTickets.filter((ticket) => ticket.status === "Closed").length,
+    },
+  ].filter((item) => item.value > 0);
+
+  if (loading) {
+    return (
+      <div className="p-6 flex justify-center items-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
+          <p className="mt-2 text-muted-foreground">Loading employee report...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!employee) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="p-6 text-center text-muted-foreground">
+            No employee found.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-foreground">Employee Report</h1>
-          <p className="text-muted-foreground">Complete work report & performance analysis</p>
+          <h1 className="text-3xl font-bold">Employee Report</h1>
+          <p className="text-muted-foreground">
+            Work, task, lead, telecaller and support performance overview
+          </p>
         </div>
-        <div className="w-64">
+
+        <div className="w-[320px]">
           <Select value={selectedEmpId} onValueChange={setSelectedEmpId}>
-            <SelectTrigger><SelectValue placeholder="Select Employee" /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue placeholder="Select Employee" />
+            </SelectTrigger>
             <SelectContent>
-              {employees.map((e) => (
-                <SelectItem key={e.id} value={e.id}>{e.name} ({e.role})</SelectItem>
+              {employees.map((emp) => (
+                <SelectItem key={emp._id} value={emp._id}>
+                  {getEmployeeName(emp)} ({emp.role})
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-      </motion.div>
-
-      {/* Employee Profile Card */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-        className="bg-card rounded-xl border border-border shadow-card p-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-primary font-bold text-2xl">
-            {emp.name.charAt(0)}
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-heading font-bold text-foreground">{emp.name}</h2>
-              <Badge variant={emp.status === 'active' ? 'success' : 'secondary'}>{emp.status}</Badge>
-            </div>
-            <p className="text-muted-foreground">{emp.role} • {emp.department}</p>
-            <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{emp.phone}</span>
-              <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />Joined: {new Date(emp.dateOfJoining).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10">
-            <Star className="w-5 h-5 text-primary" />
-            <div>
-              <p className="text-xs text-muted-foreground">Overall Score</p>
-              <p className="text-lg font-bold text-primary">{emp.performance.successRate}%</p>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Stats Grid */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-        className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {[
-          { label: 'Total Leads', value: empLeads.length, icon: Target, color: 'text-accent' },
-          { label: 'Leads Won', value: empLeads.filter((l) => l.status === 'Own Close').length, icon: CheckCircle, color: 'text-success' },
-          { label: 'Conversion', value: `${conversionRate}%`, icon: TrendingUp, color: 'text-primary' },
-          { label: 'Projects', value: empProjects.length, icon: ClipboardList, color: 'text-info' },
-          { label: 'Completed Tasks', value: emp.performance.completedTasks, icon: Award, color: 'text-warning' },
-          { label: 'Deliverables', value: `${completedDeliverables}/${empDeliverables.length}`, icon: BarChart3, color: 'text-primary' },
-        ].map((stat, i) => (
-          <div key={stat.label} className="p-4 rounded-xl bg-card border border-border shadow-card">
-            <stat.icon className={`w-5 h-5 ${stat.color} mb-2`} />
-            <p className="text-2xl font-heading font-bold text-foreground">{stat.value}</p>
-            <p className="text-xs text-muted-foreground">{stat.label}</p>
-          </div>
-        ))}
-      </motion.div>
-
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Performance Radar */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="bg-card rounded-xl border border-border shadow-card p-6">
-          <h3 className="text-lg font-heading font-semibold text-foreground mb-4">Performance Overview</h3>
-          <div className="h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={radarData}>
-                <PolarGrid stroke="hsl(210, 20%, 88%)" />
-                <PolarAngleAxis dataKey="metric" tick={{ fill: 'hsl(215, 15%, 45%)', fontSize: 11 }} />
-                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
-                <Radar name="Score" dataKey="value" stroke="hsl(168, 75%, 40%)" fill="hsl(168, 75%, 40%)" fillOpacity={0.3} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-        </motion.div>
-
-        {/* Lead Status Breakdown */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-          className="bg-card rounded-xl border border-border shadow-card p-6">
-          <h3 className="text-lg font-heading font-semibold text-foreground mb-4">Lead Status Breakdown</h3>
-          {leadsByStatus.length > 0 ? (
-            <div className="h-[280px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={leadsByStatus} cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3} dataKey="value">
-                    {leadsByStatus.map((_, i) => (<Cell key={i} fill={COLORS[i % COLORS.length]} />))}
-                  </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: 'hsl(0,0%,100%)', border: '1px solid hsl(210,20%,88%)', borderRadius: '8px' }} />
-                  <Legend wrapperStyle={{ fontSize: '12px' }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-[280px] flex items-center justify-center text-muted-foreground">No leads assigned</div>
-          )}
-        </motion.div>
       </div>
 
-      {/* Projects & Deliverables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Projects List */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-          className="bg-card rounded-xl border border-border shadow-card p-6">
-          <h3 className="text-lg font-heading font-semibold text-foreground mb-4">
-            Assigned Projects ({empProjects.length})
-          </h3>
-          {empProjects.length > 0 ? (
-            <div className="space-y-3 max-h-[320px] overflow-y-auto">
-              {empProjects.map((proj) => (
-                <div key={proj.id} className="p-3 rounded-lg border border-border hover:bg-muted/30 transition-colors">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="font-medium text-foreground text-sm">{proj.title}</p>
-                    <Badge variant={
-                      proj.status === 'Completed' ? 'success' :
-                      proj.status === 'In Progress' ? 'info' :
-                      proj.status === 'Review' ? 'warning' : 'secondary'
-                    } className="text-xs">{proj.status}</Badge>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span>{proj.type}</span>
-                    <span>Due: {new Date(proj.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-                    <span>{proj.completedDeliverables}/{proj.deliverables} deliverables</span>
-                  </div>
-                  <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-primary rounded-full transition-all"
-                      style={{ width: `${proj.deliverables > 0 ? (proj.completedDeliverables / proj.deliverables) * 100 : 0}%` }} />
-                  </div>
-                </div>
-              ))}
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary">
+              {getEmployeeName(employee).charAt(0)}
             </div>
-          ) : (
-            <div className="h-32 flex items-center justify-center text-muted-foreground">No projects assigned</div>
-          )}
-        </motion.div>
 
-        {/* Leads History */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
-          className="bg-card rounded-xl border border-border shadow-card p-6">
-          <h3 className="text-lg font-heading font-semibold text-foreground mb-4">
-            Leads History ({empLeads.length})
-          </h3>
-          {empLeads.length > 0 ? (
-            <div className="space-y-3 max-h-[320px] overflow-y-auto">
-              {empLeads.map((lead) => (
-                <div key={lead.id} className="p-3 rounded-lg border border-border hover:bg-muted/30 transition-colors">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="font-medium text-foreground text-sm">{lead.name}</p>
-                    <Badge variant={
-                      lead.status === 'Own Close' ? 'success' :
-                      lead.status === 'Own Loss' ? 'destructive' :
-                      lead.status === 'Follow Up' || lead.status === 'Call Back' ? 'warning' : 'secondary'
-                    } className="text-xs">{lead.status}</Badge>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span>{lead.businessType}</span>
-                    <span>{lead.city}</span>
-                    <span>Last: {new Date(lead.lastContactDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-                  </div>
-                  {lead.requirements.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {lead.requirements.map((r) => (
-                        <span key={r} className="px-1.5 py-0.5 text-[10px] rounded bg-muted text-muted-foreground">{r}</span>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-2xl font-bold">{getEmployeeName(employee)}</h2>
+                <Badge>{employee.status}</Badge>
+              </div>
+
+              <p className="text-muted-foreground">
+                {employee.role} {employee.department ? `• ${employee.department}` : ""}
+              </p>
+              <p className="text-sm text-muted-foreground">{employee.email}</p>
+            </div>
+
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground">Branch</p>
+              <p className="font-bold">{getBranchDisplay(employee.branchId)}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-4">
+        <StatCard title="Works" value={employeeWorks.length} icon={<ClipboardList />} />
+        <StatCard title="Main Works" value={mainWorks} icon={<ClipboardList />} />
+        <StatCard title="Child Tasks" value={childTasks} icon={<Clock />} />
+        <StatCard title="Completed" value={completedWorks} icon={<CheckCircle />} />
+        <StatCard title="Overdue" value={overdueWorks} icon={<AlertTriangle />} />
+        <StatCard title="Leads" value={employeeLeads.length} icon={<Target />} />
+        <StatCard title="Calls" value={totalCalls} icon={<PhoneCall />} />
+        <StatCard title="Time" value={`${totalTimeSpent}h`} icon={<Timer />} />
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <StatCard title="Conversion" value={`${conversionRate}%`} icon={<TrendingUp />} />
+        <StatCard title="Won Leads" value={wonLeads} icon={<CheckCircle />} />
+        <StatCard title="Telecaller Leads" value={telecallerLeads.length} icon={<PhoneCall />} />
+        <StatCard title="Open Tickets" value={openTickets} icon={<LifeBuoy />} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardContent className="p-6">
+            <h3 className="font-semibold mb-4">Work / Task Status</h3>
+            <div className="h-[300px]">
+              {workChart.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  No work data
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={workChart} dataKey="value" outerRadius={100} label>
+                      {workChart.map((_, index) => (
+                        <Cell key={index} fill={COLORS[index % COLORS.length]} />
                       ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6">
+            <h3 className="font-semibold mb-4">Ticket Status</h3>
+            <div className="h-[300px]">
+              {ticketChart.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  No ticket data
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={ticketChart}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="value" radius={[5, 5, 0, 0]} fill="#0088FE" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardContent className="p-6">
+          <h3 className="font-semibold mb-4">Assigned Works / Tasks</h3>
+
+          <div className="space-y-3">
+            {employeeWorks.length > 0 ? (
+              employeeWorks.map((work) => (
+                <div key={work._id} className="p-4 border rounded-lg">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div>
+                      <p className="font-medium">{work.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {getClientName(work)} • {work.workType || "General"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Parent: {getParentWorkTitle(work)}
+                      </p>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="h-32 flex items-center justify-center text-muted-foreground">No leads assigned</div>
-          )}
-        </motion.div>
-      </div>
 
-      {/* Attendance & Deliverables Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Attendance Summary */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
-          className="bg-card rounded-xl border border-border shadow-card p-6">
-          <h3 className="text-lg font-heading font-semibold text-foreground mb-4">Attendance Summary</h3>
-          <div className="grid grid-cols-3 gap-4">
-            <div className="p-4 rounded-lg bg-success/10 text-center">
-              <p className="text-2xl font-bold text-success">{presentDays}</p>
-              <p className="text-xs text-muted-foreground">Present</p>
-            </div>
-            <div className="p-4 rounded-lg bg-destructive/10 text-center">
-              <p className="text-2xl font-bold text-destructive">{absentDays}</p>
-              <p className="text-xs text-muted-foreground">Absent</p>
-            </div>
-            <div className="p-4 rounded-lg bg-warning/10 text-center">
-              <p className="text-2xl font-bold text-warning">{leaveDays}</p>
-              <p className="text-xs text-muted-foreground">Leave</p>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Deliverables Summary */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}
-          className="bg-card rounded-xl border border-border shadow-card p-6">
-          <h3 className="text-lg font-heading font-semibold text-foreground mb-4">Deliverables Tracker</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 rounded-lg bg-success/10 text-center">
-              <p className="text-2xl font-bold text-success">{completedDeliverables}</p>
-              <p className="text-xs text-muted-foreground">Completed</p>
-            </div>
-            <div className="p-4 rounded-lg bg-warning/10 text-center">
-              <p className="text-2xl font-bold text-warning">{pendingDeliverables}</p>
-              <p className="text-xs text-muted-foreground">Pending</p>
-            </div>
-          </div>
-          {empDeliverables.length > 0 && (
-            <div className="mt-4 space-y-2 max-h-40 overflow-y-auto">
-              {empDeliverables.slice(0, 5).map((d) => (
-                <div key={d.id} className="flex items-center justify-between text-sm p-2 rounded bg-muted/30">
-                  <span className="text-foreground">{d.title}</span>
-                  <Badge variant={d.status === 'Completed' ? 'success' : d.status === 'In Progress' ? 'info' : 'secondary'} className="text-xs">
-                    {d.status}
-                  </Badge>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="outline">{work.priority || "Medium"}</Badge>
+                      <Badge>{work.status}</Badge>
+                      {isOverdue(work) && (
+                        <Badge variant="destructive">Overdue</Badge>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </motion.div>
-      </div>
+              ))
+            ) : (
+              <p className="text-muted-foreground text-center py-6">
+                No works assigned to this employee
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
+  );
+}
+
+function StatCard({
+  title,
+  value,
+  icon,
+}: {
+  title: string;
+  value: string | number;
+  icon: React.ReactNode;
+}) {
+  return (
+    <motion.div whileHover={{ y: -2 }} className="bg-card border rounded-xl p-4">
+      <div className="flex items-center justify-between mb-2 text-primary">
+        <div className="w-5 h-5">{icon}</div>
+      </div>
+      <h3 className="text-2xl font-bold">{value}</h3>
+      <p className="text-sm text-muted-foreground">{title}</p>
+    </motion.div>
   );
 }

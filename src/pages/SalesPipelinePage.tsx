@@ -1,564 +1,1119 @@
-import { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import {
-  Plus, Search, Phone, Calendar, IndianRupee, TrendingUp, Building2,
-  ChevronRight, ChevronLeft, X, MessageSquare, Trophy, AlertOctagon,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
+  Plus,
+  Search,
+  Phone,
+  Calendar,
+  IndianRupee,
+  TrendingUp,
+  Building2,
+  ChevronRight,
+  ChevronLeft,
+  X,
+  MessageSquare,
+  Trophy,
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import { useCRMStore } from '@/store/crmStore';
-import { useDealStore } from '@/store/dealStore';
-import { useInvoiceStore } from '@/store/invoiceStore';
-import { useTaskStore, tasksFromProjectType } from '@/store/taskStore';
-import { Deal, DealStage, DEAL_STAGES } from '@/data/dealData';
-import { Customer } from '@/data/dummyData';
-import { Invoice } from '@/data/invoiceData';
-import { useToast } from '@/hooks/use-toast';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+
+const API_URL = import.meta.env.VITE_API_URL || "https://digitalness-backend.onrender.com/api";
+
+type DealStage =
+  | "New"
+  | "Contacted"
+  | "Discovery"
+  | "Qualified"
+  | "Proposal"
+  | "Negotiation"
+  | "Won"
+  | "Lost";
+
+const DEAL_STAGES: DealStage[] = [
+  "New",
+  "Contacted",
+  "Discovery",
+  "Qualified",
+  "Proposal",
+  "Negotiation",
+  "Won",
+  "Lost",
+];
 
 const stageColors: Record<DealStage, string> = {
-  New: 'bg-blue-500/10 border-blue-500/30 text-blue-600',
-  Contacted: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-600',
-  Discovery: 'bg-violet-500/10 border-violet-500/30 text-violet-600',
-  Qualified: 'bg-indigo-500/10 border-indigo-500/30 text-indigo-600',
-  Proposal: 'bg-amber-500/10 border-amber-500/30 text-amber-600',
-  Negotiation: 'bg-orange-500/10 border-orange-500/30 text-orange-600',
-  Won: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600',
-  Lost: 'bg-rose-500/10 border-rose-500/30 text-rose-600',
+  New: "bg-blue-500/10 border-blue-500/30 text-blue-600",
+  Contacted: "bg-cyan-500/10 border-cyan-500/30 text-cyan-600",
+  Discovery: "bg-violet-500/10 border-violet-500/30 text-violet-600",
+  Qualified: "bg-indigo-500/10 border-indigo-500/30 text-indigo-600",
+  Proposal: "bg-amber-500/10 border-amber-500/30 text-amber-600",
+  Negotiation: "bg-orange-500/10 border-orange-500/30 text-orange-600",
+  Won: "bg-emerald-500/10 border-emerald-500/30 text-emerald-600",
+  Lost: "bg-rose-500/10 border-rose-500/30 text-rose-600",
 };
 
-const lostReasons = ['Price', 'No Response', 'Competitor', 'Not Interested', 'Other'];
+const lostReasons = [
+  "Price",
+  "No Response",
+  "Competitor",
+  "Not Interested",
+  "Other",
+];
+
+// Helper: extract user info from localStorage
+const getCurrentUser = () => {
+  try {
+    const stored = localStorage.getItem("user");
+    if (!stored) return null;
+    const user = JSON.parse(stored);
+    return {
+      _id: user._id || user.id,
+      role: user.role,
+      branchId: user.branchId,
+      name: user.name,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const getAuthConfig = () => {
+  const token =
+    localStorage.getItem("token") ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("accessToken");
+
+  return {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  };
+};
+
+const getArrayData = (data: any) => {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.deals)) return data.deals;
+  if (Array.isArray(data?.leads)) return data.leads;
+  if (Array.isArray(data?.users)) return data.users;
+  if (Array.isArray(data?.branches)) return data.branches;
+  return [];
+};
 
 export default function SalesPipelinePage() {
-  const { deals, addDeal, updateDeal, moveDealStage, addCallLog } = useDealStore();
-  const { leads, employees, branches, customers, addCustomer, addProject, currentUser } = useCRMStore();
-  const { addInvoice } = useInvoiceStore();
-  const { addTasks } = useTaskStore();
   const { toast } = useToast();
+  const currentUser = getCurrentUser();
+  const isAdminOrManager = ["Admin", "Operational Manager"].includes(currentUser?.role || "");
+  const isTelecaller = currentUser?.role === "Telecaller";
 
-  const [search, setSearch] = useState('');
-  const [branchFilter, setBranchFilter] = useState<string>('All');
-  const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
+  const [deals, setDeals] = useState<any[]>([]);
+  const [leads, setLeads] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [branches, setBranches] = useState<{ id: string; name: string,branchId : string }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [branchesLoading, setBranchesLoading] = useState(true);
+
+  const [search, setSearch] = useState("");
+  const [branchFilter, setBranchFilter] = useState("All");
+  const [selectedDeal, setSelectedDeal] = useState<any | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [lostDeal, setLostDeal] = useState<Deal | null>(null);
-  const [lostReason, setLostReason] = useState<string>('Price');
-  const [callNote, setCallNote] = useState('');
+  const [lostDeal, setLostDeal] = useState<any | null>(null);
+  const [lostReason, setLostReason] = useState("Price");
+  const [callNote, setCallNote] = useState("");
 
   const [newDeal, setNewDeal] = useState({
-    leadId: '', title: '', dealValue: 0, probability: 50,
-    expectedCloseDate: '', assignedTo: '', branchId: '', notes: '',
+    leadId: "",
+    title: "",
+    dealValue: 0,
+    probability: 50,
+    expectedCloseDate: "",
+    assignedTo: "",
+    branchId: "BR001",
+    notes: "",
   });
 
+  // Fetch branches from API
+  const fetchBranches = async () => {
+    try {
+      setBranchesLoading(true);
+      const res = await fetch(`${API_URL}/branches`, getAuthConfig());
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to fetch branches");
+      const branchesData = getArrayData(data);
+      setBranches(branchesData);
+      // If user has a branchId and it's not in the list, we might still keep filter "All"
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Could not load branches",
+        variant: "destructive",
+      });
+      // Fallback to empty array
+      setBranches([]);
+    } finally {
+      setBranchesLoading(false);
+    }
+  };
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+
+      const [dealsRes, leadsRes, usersRes] = await Promise.all([
+        fetch(`${API_URL}/deals`, getAuthConfig()),
+        fetch(`${API_URL}/leads`, getAuthConfig()),
+        fetch(`${API_URL}/users`, getAuthConfig()),
+      ]);
+
+      const dealsData = await dealsRes.json();
+      const leadsData = await leadsRes.json();
+      const usersData = await usersRes.json();
+
+      if (!dealsRes.ok) {
+        throw new Error(dealsData.message || "Failed to fetch deals");
+      }
+
+      let allDeals = getArrayData(dealsData);
+      let allLeads = getArrayData(leadsData);
+      let allEmployees = getArrayData(usersData);
+
+      // Role‑based filtering: non‑admin users see only their assigned items
+      if (!isAdminOrManager && currentUser?._id) {
+        allDeals = allDeals.filter(
+          (deal: any) =>
+            extractId(deal.assignedTo) === currentUser._id
+        );
+        allLeads = allLeads.filter(
+          (lead: any) =>
+            extractId(lead.assignedTo) === currentUser._id
+        );
+        // Employees list – telecaller sees only themselves (or hide)
+        allEmployees = allEmployees.filter(
+          (emp: any) => extractId(emp._id) === currentUser._id
+        );
+      }
+
+      setDeals(allDeals);
+      setLeads(allLeads);
+      setEmployees(allEmployees);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to fetch pipeline data",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const extractId = (obj: any): string | null => {
+    if (!obj) return null;
+    if (typeof obj === "string") return obj;
+    if (obj.$oid) return obj.$oid;
+    if (obj._id) return obj._id;
+    return null;
+  };
+
+  // Load branches and data on mount
+  useEffect(() => {
+    fetchBranches();
+    fetchData();
+  }, []);
+
+  const getDealId = (deal: any) => deal._id || deal.id;
+
+  const employeeName = (assignedTo: any) => {
+    if (!assignedTo) return "Unassigned";
+
+    if (typeof assignedTo === "object") {
+      return assignedTo.name || assignedTo.email || "Unassigned";
+    }
+
+    const emp = employees.find(
+      (e: any) => String(e._id || e.id) === String(assignedTo)
+    );
+
+    return emp?.name || emp?.email || "Unassigned";
+  };
+
+  const branchName = (id: string) => {
+    const branch = branches.find((b) => b.id === id);
+    return branch?.name || id || "—";
+  };
+
   const visibleDeals = useMemo(() => {
-    return deals.filter((d) => {
-      const matchesSearch =
-        !search ||
-        d.title.toLowerCase().includes(search.toLowerCase()) ||
-        d.customerName.toLowerCase().includes(search.toLowerCase());
-      const matchesBranch = branchFilter === 'All' || d.branchId === branchFilter;
-      // Role filter: Sales sees own deals; others see all
-      const isSales = currentUser?.role === 'Sales Executive';
-      const matchesRole = !isSales || d.assignedTo === currentUser?.id;
-      return matchesSearch && matchesBranch && matchesRole;
-    });
-  }, [deals, search, branchFilter, currentUser]);
+    let filtered = deals;
+
+    // Apply search
+    if (search) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter(
+        (deal) =>
+          deal.title?.toLowerCase().includes(q) ||
+          deal.customerName?.toLowerCase().includes(q) ||
+          deal.contactNumber?.toLowerCase().includes(q) ||
+          deal.businessType?.toLowerCase().includes(q)
+      );
+    }
+
+    // Apply branch filter (respect user's branch if telecaller)
+    if (branchFilter !== "All") {
+      filtered = filtered.filter((deal) => deal.branchId === branchFilter);
+    } else if (isTelecaller && currentUser?.branchId) {
+      // Telecallers should only see deals from their branch
+      filtered = filtered.filter((deal) => deal.branchId === currentUser.branchId);
+    }
+
+    return filtered;
+  }, [deals, search, branchFilter, isTelecaller, currentUser]);
 
   const dealsByStage = useMemo(() => {
-    const grouped: Record<DealStage, Deal[]> = {
-      New: [], Contacted: [], Discovery: [], Qualified: [],
-      Proposal: [], Negotiation: [], Won: [], Lost: [],
+    const grouped: Record<DealStage, any[]> = {
+      New: [],
+      Contacted: [],
+      Discovery: [],
+      Qualified: [],
+      Proposal: [],
+      Negotiation: [],
+      Won: [],
+      Lost: [],
     };
-    visibleDeals.forEach((d) => grouped[d.stage].push(d));
+
+    visibleDeals.forEach((deal) => {
+      grouped[deal.stage as DealStage]?.push(deal);
+    });
+
     return grouped;
   }, [visibleDeals]);
 
   const stats = useMemo(() => {
-    const open = visibleDeals.filter((d) => d.stage !== 'Won' && d.stage !== 'Lost');
+    const open = visibleDeals.filter(
+      (deal) => deal.stage !== "Won" && deal.stage !== "Lost"
+    );
+
     return {
       total: visibleDeals.length,
       open: open.length,
-      pipelineValue: open.reduce((s, d) => s + d.dealValue, 0),
-      won: visibleDeals.filter((d) => d.stage === 'Won').length,
-      wonValue: visibleDeals.filter((d) => d.stage === 'Won').reduce((s, d) => s + d.dealValue, 0),
+      pipelineValue: open.reduce((sum, deal) => sum + Number(deal.dealValue || 0), 0),
+      won: visibleDeals.filter((deal) => deal.stage === "Won").length,
+      wonValue: visibleDeals
+        .filter((deal) => deal.stage === "Won")
+        .reduce((sum, deal) => sum + Number(deal.dealValue || 0), 0),
     };
   }, [visibleDeals]);
 
-  const employeeName = (id: string) => employees.find((e) => e.id === id)?.name || 'Unassigned';
-  const branchName = (id: string) => branches.find((b) => b.id === id)?.name || '—';
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(amount || 0);
 
-  const moveStage = (deal: Deal, dir: 1 | -1) => {
+  const moveStage = async (deal: any, dir: 1 | -1) => {
     const idx = DEAL_STAGES.indexOf(deal.stage);
     const next = DEAL_STAGES[idx + dir];
+
     if (!next) return;
 
-    if (next === 'Won') {
-      handleWin(deal);
-      return;
-    }
-    if (next === 'Lost') {
+    if (next === "Lost") {
       setLostDeal(deal);
       return;
     }
-    moveDealStage(deal.id, next);
-    toast({ title: 'Stage updated', description: `${deal.title} → ${next}` });
+
+    await updateDealStage(deal, next);
   };
 
-  const handleWin = (deal: Deal) => {
-    // 1. Convert to Customer (reuse existing one if matched by name)
-    let customer = customers.find((c) => c.name.toLowerCase() === deal.customerName.toLowerCase());
-    let customerId = customer?.id;
+  const updateDealStage = async (
+    deal: any,
+    stage: DealStage,
+    reason?: string
+  ) => {
+    try {
+      const res = await fetch(`${API_URL}/deals/${getDealId(deal)}/stage`, {
+        method: "PATCH",
+        ...getAuthConfig(),
+        body: JSON.stringify({
+          stage,
+          lostReason: reason,
+        }),
+      });
 
-    if (!customer) {
-      const newCust: Customer = {
-        id: `CUST${Date.now()}`,
-        name: deal.customerName,
-        businessType: deal.businessType,
-        contactNumbers: [deal.contactNumber],
-        email: '',
-        address: '',
-        city: branches.find((b) => b.id === deal.branchId)?.city || '',
-        requirements: [],
-        projects: [],
-        totalPaid: 0,
-        totalPending: deal.dealValue,
-        createdOn: new Date().toISOString().split('T')[0],
-      };
-      addCustomer(newCust);
-      customerId = newCust.id;
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to update stage");
+      }
+
+      const updatedDeal = data.deal || data.data || data;
+
+      setDeals((prev) =>
+        prev.map((item) =>
+          String(getDealId(item)) === String(getDealId(updatedDeal))
+            ? updatedDeal
+            : item
+        )
+      );
+
+      setSelectedDeal((prev: any) =>
+        prev && String(getDealId(prev)) === String(getDealId(updatedDeal))
+          ? updatedDeal
+          : prev
+      );
+
+      if (stage === "Won") {
+        toast({
+          title: "Customer Created",
+          description: "Deal won successfully and customer was created automatically",
+        });
+      }
+      if (stage === "Proposal") {
+        toast({
+          title: "Proposal Created",
+          description:
+            data.message ||
+            "Deal moved to Proposal and proposal created automatically",
+        });
+      } else {
+        toast({
+          title: "Stage Updated",
+          description: `${deal.title} moved to ${stage}`,
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update deal stage",
+        variant: "destructive",
+      });
     }
-
-    // 2. Auto-create project
-    const projectId = `PROJ${Date.now()}`;
-    addProject({
-      id: projectId,
-      customerId: customerId!,
-      title: `${deal.customerName} - Onboarding`,
-      type: 'Digital Marketing',
-      status: 'Not Started',
-      priority: 'Medium',
-      assignedTo: [deal.assignedTo],
-      dueDate: deal.expectedCloseDate,
-      createdOn: new Date().toISOString().split('T')[0],
-      description: deal.notes || 'Auto-created from won deal',
-      deliverables: 0,
-      completedDeliverables: 0,
-    });
-
-    // 2b. Auto-generate playbook tasks for the new project
-    const autoTasks = tasksFromProjectType('Digital Marketing', projectId, customerId, deal.assignedTo);
-    if (autoTasks.length) addTasks(autoTasks);
-
-    // 3. Draft invoice
-    const invoiceId = `INV${Date.now()}`;
-    const subtotal = deal.dealValue;
-    const tax = Math.round(subtotal * 0.18);
-    const draftInvoice: Invoice = {
-      id: invoiceId,
-      invoiceNumber: `KN21-${new Date().getFullYear()}-${invoiceId.slice(-4)}`,
-      customerId: customerId!,
-      customerName: deal.customerName,
-      items: [
-        { id: `IT${Date.now()}`, description: deal.title, quantity: 1, rate: subtotal, amount: subtotal },
-      ],
-      subtotal, tax, discount: 0, total: subtotal + tax,
-      status: 'Draft',
-      createdDate: new Date().toISOString().split('T')[0],
-      dueDate: deal.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-      paidAmount: 0,
-      notes: 'Auto-generated from Sales Pipeline (Won deal)',
-    };
-    addInvoice(draftInvoice);
-
-    moveDealStage(deal.id, 'Won', {
-      wonOn: new Date().toISOString().split('T')[0],
-      customerId,
-      invoiceId,
-      probability: 100,
-    });
-
-    toast({
-      title: '🎉 Deal Won!',
-      description: `Customer + project created, draft invoice ${draftInvoice.invoiceNumber} added.`,
-    });
   };
 
-  const handleConfirmLost = () => {
+  const handleConfirmLost = async () => {
     if (!lostDeal) return;
-    moveDealStage(lostDeal.id, 'Lost', { lostReason, probability: 0 });
-    toast({ title: 'Deal marked Lost', description: lostReason, variant: 'destructive' });
+
+    await updateDealStage(lostDeal, "Lost", lostReason);
+
     setLostDeal(null);
-    setLostReason('Price');
+    setLostReason("Price");
   };
 
-  const handleAddDeal = () => {
-    if (!newDeal.title || !newDeal.dealValue || !newDeal.assignedTo) {
-      toast({ title: 'Missing fields', description: 'Title, value, owner are required', variant: 'destructive' });
+  const handleLeadSelect = (leadId: string) => {
+    const lead = leads.find((l: any) => String(l._id || l.id) === String(leadId));
+
+    setNewDeal({
+      ...newDeal,
+      leadId,
+      title: lead?.businessType
+        ? `${lead.name} - ${lead.businessType}`
+        : lead?.name || "",
+      branchId: lead?.branchId || (branches.length > 0 ? branches[0].id : "BR001"),
+      assignedTo: lead?.assignedTo?._id || lead?.assignedTo || "",
+    });
+  };
+
+  const handleAddDeal = async () => {
+    const lead = leads.find(
+      (l: any) => String(l._id || l.id) === String(newDeal.leadId)
+    );
+
+    if (!newDeal.leadId || !newDeal.title || !newDeal.dealValue) {
+      toast({
+        title: "Missing fields",
+        description: "Lead, title and deal value are required",
+        variant: "destructive",
+      });
       return;
     }
-    const lead = leads.find((l) => l.id === newDeal.leadId);
-    const deal: Deal = {
-      id: `DEAL${Date.now()}`,
-      leadId: newDeal.leadId,
-      title: newDeal.title,
-      customerName: lead?.name || newDeal.title,
-      contactNumber: lead?.contactNumber || '',
-      businessType: lead?.businessType || '',
-      branchId: newDeal.branchId || lead?.branchId || 'BR001',
-      stage: 'New',
-      dealValue: Number(newDeal.dealValue),
-      probability: Number(newDeal.probability),
-      expectedCloseDate: newDeal.expectedCloseDate,
-      assignedTo: newDeal.assignedTo,
-      notes: newDeal.notes,
-      callLogs: [],
-      createdOn: new Date().toISOString().split('T')[0],
-    };
-    addDeal(deal);
-    toast({ title: 'Deal created', description: deal.title });
-    setShowAdd(false);
-    setNewDeal({ leadId: '', title: '', dealValue: 0, probability: 50, expectedCloseDate: '', assignedTo: '', branchId: '', notes: '' });
+
+    try {
+      const payload = {
+        leadId: newDeal.leadId,
+        title: newDeal.title,
+        customerName:
+          lead?.name ||
+          lead?.customerName ||
+          lead?.clientName ||
+          newDeal.title,
+        contactNumber:
+          lead?.contactNumber ||
+          lead?.phone ||
+          lead?.mobile ||
+          "",
+        businessType: lead?.businessType || "",
+        branchId: newDeal.branchId || lead?.branchId || (branches[0]?.id || "BR001"),
+        stage: "New",
+        dealValue: Number(newDeal.dealValue),
+        probability: Number(newDeal.probability),
+        expectedCloseDate: newDeal.expectedCloseDate || undefined,
+        assignedTo: newDeal.assignedTo || lead?.assignedTo?._id || lead?.assignedTo,
+        notes: newDeal.notes,
+      };
+
+      const res = await fetch(`${API_URL}/deals`, {
+        method: "POST",
+        ...getAuthConfig(),
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to create deal");
+      }
+
+      const createdDeal = data.deal || data.data || data;
+
+      setDeals((prev) => [createdDeal, ...prev]);
+
+      toast({
+        title: "Deal created",
+        description: createdDeal.title,
+      });
+
+      setShowAdd(false);
+      setNewDeal({
+        leadId: "",
+        title: "",
+        dealValue: 0,
+        probability: 50,
+        expectedCloseDate: "",
+        assignedTo: "",
+        branchId: branches[0]?.id || "BR001",
+        notes: "",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create deal",
+        variant: "destructive",
+      });
+    }
   };
 
-  const saveCallLog = () => {
+  const saveCallLog = async () => {
     if (!selectedDeal || !callNote.trim()) return;
-    addCallLog(selectedDeal.id, {
-      id: `DL${Date.now()}`,
-      date: new Date().toISOString().split('T')[0],
-      notes: callNote,
-      by: currentUser?.id || 'system',
-    });
-    setCallNote('');
-    toast({ title: 'Call log added' });
-    // Refresh selected deal
-    const refreshed = useDealStore.getState().deals.find((d) => d.id === selectedDeal.id);
-    if (refreshed) setSelectedDeal(refreshed);
+
+    try {
+      const res = await fetch(
+        `${API_URL}/deals/${getDealId(selectedDeal)}/call-log`,
+        {
+          method: "POST",
+          ...getAuthConfig(),
+          body: JSON.stringify({
+            notes: callNote,
+          }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to add call log");
+      }
+
+      const updatedDeal = data.deal || data.data || data;
+
+      setDeals((prev) =>
+        prev.map((deal) =>
+          String(getDealId(deal)) === String(getDealId(updatedDeal))
+            ? updatedDeal
+            : deal
+        )
+      );
+
+      setSelectedDeal(updatedDeal);
+      setCallNote("");
+
+      toast({
+        title: "Call log added",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add call log",
+        variant: "destructive",
+      });
+    }
   };
 
-  const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n);
+  const deleteDeal = async (deal: any) => {
+    try {
+      const res = await fetch(`${API_URL}/deals/${getDealId(deal)}`, {
+        method: "DELETE",
+        ...getAuthConfig(),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to delete deal");
+      }
+
+      setDeals((prev) =>
+        prev.filter((item) => String(getDealId(item)) !== String(getDealId(deal)))
+      );
+
+      setSelectedDeal(null);
+
+      toast({
+        title: "Deal deleted",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete deal",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+      >
         <div>
-          <h1 className="text-2xl font-heading font-bold text-foreground">Sales Pipeline</h1>
-          <p className="text-muted-foreground">Track deals from New → Won across stages</p>
+          <h1 className="text-2xl font-heading font-bold text-foreground">
+            Sales Pipeline {isTelecaller && "(Telecaller View)"}
+          </h1>
+          <p className="text-muted-foreground">
+            Track deals, stages, follow-ups and conversions
+          </p>
         </div>
+
         <Button variant="gradient" onClick={() => setShowAdd(true)}>
-          <Plus className="w-4 h-4 mr-2" /> New Deal
+          <Plus className="w-4 h-4 mr-2" />
+          Add Deal
         </Button>
       </motion.div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="p-4 rounded-xl bg-card border border-border shadow-card">
-          <p className="text-2xl font-heading font-bold text-foreground">{stats.total}</p>
+          <p className="text-2xl font-heading font-bold">{stats.total}</p>
           <p className="text-sm text-muted-foreground">Total Deals</p>
         </div>
-        <div className="p-4 rounded-xl bg-primary/10 border border-primary/30">
-          <p className="text-2xl font-heading font-bold text-primary">{stats.open}</p>
-          <p className="text-sm text-muted-foreground">Open</p>
+
+        <div className="p-4 rounded-xl bg-info/10 border border-info/30">
+          <p className="text-2xl font-heading font-bold text-info">
+            {stats.open}
+          </p>
+          <p className="text-sm text-muted-foreground">Open Deals</p>
         </div>
-        <div className="p-4 rounded-xl bg-accent/10 border border-accent/30">
-          <p className="text-xl font-heading font-bold text-accent">₹{fmt(stats.pipelineValue)}</p>
+
+        <div className="p-4 rounded-xl bg-warning/10 border border-warning/30">
+          <p className="text-2xl font-heading font-bold text-warning">
+            {formatCurrency(stats.pipelineValue)}
+          </p>
           <p className="text-sm text-muted-foreground">Pipeline Value</p>
         </div>
+
         <div className="p-4 rounded-xl bg-success/10 border border-success/30">
-          <p className="text-2xl font-heading font-bold text-success">{stats.won}</p>
-          <p className="text-sm text-muted-foreground">Won</p>
-        </div>
-        <div className="p-4 rounded-xl bg-warning/10 border border-warning/30">
-          <p className="text-xl font-heading font-bold text-warning">₹{fmt(stats.wonValue)}</p>
+          <p className="text-2xl font-heading font-bold text-success">
+            {formatCurrency(stats.wonValue)}
+          </p>
           <p className="text-sm text-muted-foreground">Won Value</p>
         </div>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
+        <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search deals..." value={search}
-            onChange={(e) => setSearch(e.target.value)} className="pl-10" />
+          <Input
+            placeholder="Search deals..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10"
+          />
         </div>
+
         <Select value={branchFilter} onValueChange={setBranchFilter}>
-          <SelectTrigger className="w-full sm:w-56">
+          <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="Branch" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="All">All Branches</SelectItem>
-            {branches.map((b) => (
-              <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+            {branches.map((branch) => (
+              <SelectItem key={branch.id} value={branch.id}>
+                {branch.name}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
+
+        <Button variant="outline" onClick={fetchData}>
+          Refresh
+        </Button>
       </div>
 
-      {/* Kanban Board */}
-      <div className="overflow-x-auto pb-4">
-        <div className="flex gap-4 min-w-max">
-          {DEAL_STAGES.map((stage) => (
-            <div key={stage} className="w-72 flex-shrink-0">
-              <div className={`px-3 py-2 rounded-t-lg border ${stageColors[stage]} flex items-center justify-between font-medium`}>
-                <span>{stage}</span>
-                <Badge variant="secondary">{dealsByStage[stage].length}</Badge>
-              </div>
-              <div className="bg-muted/30 border border-t-0 border-border rounded-b-lg p-2 space-y-2 min-h-[400px]">
-                {dealsByStage[stage].map((deal) => {
-                  const idx = DEAL_STAGES.indexOf(deal.stage);
-                  return (
-                    <motion.div
-                      key={deal.id}
-                      layout
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-3 rounded-lg bg-card border border-border shadow-sm hover:shadow-md transition-all cursor-pointer"
-                      onClick={() => setSelectedDeal(deal)}
-                    >
-                      <p className="font-medium text-sm text-foreground line-clamp-2">{deal.title}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{deal.customerName}</p>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-sm font-semibold text-primary flex items-center">
-                          <IndianRupee className="w-3 h-3" />{fmt(deal.dealValue)}
-                        </span>
-                        <Badge variant="outline" className="text-[10px]">{deal.probability}%</Badge>
-                      </div>
-                      <div className="flex items-center justify-between mt-2 text-[10px] text-muted-foreground">
-                        <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{branchName(deal.branchId)}</span>
-                        {deal.expectedCloseDate && (
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            {new Date(deal.expectedCloseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                          </span>
-                        )}
-                      </div>
-                      {deal.stage !== 'Won' && deal.stage !== 'Lost' && (
-                        <div className="flex gap-1 mt-2" onClick={(e) => e.stopPropagation()}>
-                          <Button variant="outline" size="sm" className="flex-1 h-7 text-xs"
-                            onClick={() => moveStage(deal, -1)} disabled={idx === 0}>
-                            <ChevronLeft className="w-3 h-3" />
-                          </Button>
-                          <Button variant="default" size="sm" className="flex-1 h-7 text-xs"
-                            onClick={() => moveStage(deal, 1)}>
-                            <ChevronRight className="w-3 h-3" />
-                          </Button>
-                        </div>
+      {loading && <p className="text-sm text-muted-foreground">Loading deals...</p>}
+      {branchesLoading && <p className="text-sm text-muted-foreground">Loading branches...</p>}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8 gap-4 overflow-x-auto">
+        {DEAL_STAGES.map((stage) => (
+          <div
+            key={stage}
+            className="rounded-xl bg-muted/30 border border-border p-3 min-h-[300px]"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <Badge className={stageColors[stage]}>{stage}</Badge>
+              <span className="text-sm text-muted-foreground">
+                {dealsByStage[stage].length}
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {dealsByStage[stage].map((deal) => {
+                const dealId = getDealId(deal);
+                const stageIndex = DEAL_STAGES.indexOf(deal.stage);
+
+                return (
+                  <motion.div
+                    key={dealId}
+                    layout
+                    className="rounded-lg bg-card border border-border p-3 shadow-card hover:shadow-card-hover transition-all cursor-pointer"
+                    onClick={() => setSelectedDeal(deal)}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <h3 className="font-medium text-sm line-clamp-2">
+                        {deal.title}
+                      </h3>
+
+                      {deal.stage === "Won" && (
+                        <Trophy className="w-4 h-4 text-success" />
                       )}
-                    </motion.div>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground mb-2">
+                      {deal.customerName}
+                    </p>
+
+                    <div className="space-y-1 text-xs text-muted-foreground mb-3">
+                      <div className="flex items-center gap-1">
+                        <Phone className="w-3 h-3" />
+                        {deal.contactNumber || "No phone"}
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <Building2 className="w-3 h-3" />
+                        {branchName(deal.branchId)}
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <IndianRupee className="w-3 h-3" />
+                        {formatCurrency(deal.dealValue)}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <Badge variant="outline" className="text-xs">
+                        {deal.probability || 0}%
+                      </Badge>
+
+                      <p className="text-xs text-muted-foreground">
+                        {employeeName(deal.assignedTo)}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 mt-3">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2"
+                        disabled={stageIndex === 0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          moveStage(deal, -1);
+                        }}
+                      >
+                        <ChevronLeft className="w-3 h-3" />
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2"
+                        disabled={stageIndex === DEAL_STAGES.length - 1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          moveStage(deal, 1);
+                        }}
+                      >
+                        <ChevronRight className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </motion.div>
+                );
+              })}
+
+              {dealsByStage[stage].length === 0 && (
+                <p className="text-xs text-center text-muted-foreground py-6">
+                  No deals
+                </p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Add New Deal</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <Select value={newDeal.leadId} onValueChange={handleLeadSelect}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Lead *" />
+              </SelectTrigger>
+              <SelectContent>
+                {leads.map((lead: any) => {
+                  const id = lead._id || lead.id;
+                  const name =
+                    lead.name ||
+                    lead.customerName ||
+                    lead.clientName ||
+                    "Unnamed Lead";
+
+                  return (
+                    <SelectItem key={id} value={id}>
+                      {name} - {lead.contactNumber || lead.phone || "No phone"}
+                    </SelectItem>
                   );
                 })}
-                {dealsByStage[stage].length === 0 && (
-                  <p className="text-xs text-muted-foreground text-center py-8">No deals</p>
-                )}
-              </div>
+              </SelectContent>
+            </Select>
+
+            <Input
+              placeholder="Deal Title *"
+              value={newDeal.title}
+              onChange={(e) =>
+                setNewDeal({ ...newDeal, title: e.target.value })
+              }
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                type="number"
+                placeholder="Deal Value *"
+                value={newDeal.dealValue}
+                onChange={(e) =>
+                  setNewDeal({
+                    ...newDeal,
+                    dealValue: Number(e.target.value),
+                  })
+                }
+              />
+
+              <Input
+                type="number"
+                placeholder="Probability %"
+                value={newDeal.probability}
+                onChange={(e) =>
+                  setNewDeal({
+                    ...newDeal,
+                    probability: Number(e.target.value),
+                  })
+                }
+              />
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Deal Detail Drawer */}
-      <Dialog open={!!selectedDeal} onOpenChange={() => setSelectedDeal(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {selectedDeal?.title}
-              {selectedDeal && <Badge className={stageColors[selectedDeal.stage]}>{selectedDeal.stage}</Badge>}
-            </DialogTitle>
-          </DialogHeader>
-          {selectedDeal && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">Customer</p>
-                  <p className="font-medium">{selectedDeal.customerName}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">Contact</p>
-                  <p className="font-medium flex items-center gap-1"><Phone className="w-3 h-3" />{selectedDeal.contactNumber}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">Deal Value</p>
-                  <p className="font-medium text-primary">₹{fmt(selectedDeal.dealValue)}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">Probability</p>
-                  <p className="font-medium">{selectedDeal.probability}%</p>
-                </div>
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">Expected Close</p>
-                  <p className="font-medium">{selectedDeal.expectedCloseDate || '—'}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">Owner / Branch</p>
-                  <p className="font-medium">{employeeName(selectedDeal.assignedTo)}</p>
-                  <p className="text-xs text-muted-foreground">{branchName(selectedDeal.branchId)}</p>
-                </div>
-              </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                type="date"
+                value={newDeal.expectedCloseDate}
+                onChange={(e) =>
+                  setNewDeal({
+                    ...newDeal,
+                    expectedCloseDate: e.target.value,
+                  })
+                }
+              />
 
-              {selectedDeal.lostReason && (
-                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
-                  <p className="text-xs text-destructive font-medium flex items-center gap-1">
-                    <AlertOctagon className="w-3 h-3" /> Lost Reason
-                  </p>
-                  <p className="text-sm">{selectedDeal.lostReason}</p>
-                </div>
-              )}
-
-              {selectedDeal.invoiceId && (
-                <div className="p-3 rounded-lg bg-success/10 border border-success/30">
-                  <p className="text-xs text-success font-medium flex items-center gap-1">
-                    <Trophy className="w-3 h-3" /> Won — Invoice & Project Created
-                  </p>
-                  <p className="text-sm">Invoice ID: {selectedDeal.invoiceId}</p>
-                </div>
-              )}
-
-              <div>
-                <p className="text-sm font-medium mb-1">Notes</p>
-                <p className="text-sm text-muted-foreground p-3 rounded-lg bg-muted/30">{selectedDeal.notes || '—'}</p>
-              </div>
-
-              <div>
-                <p className="text-sm font-medium mb-2 flex items-center gap-1">
-                  <MessageSquare className="w-4 h-4" /> Call Logs ({selectedDeal.callLogs.length})
-                </p>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {selectedDeal.callLogs.map((log) => (
-                    <div key={log.id} className="text-xs p-2 rounded bg-muted/30">
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>{employeeName(log.by)}</span>
-                        <span>{log.date}</span>
-                      </div>
-                      <p className="mt-1">{log.notes}</p>
-                    </div>
-                  ))}
-                  {selectedDeal.callLogs.length === 0 && (
-                    <p className="text-xs text-muted-foreground">No calls logged.</p>
-                  )}
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <Input value={callNote} onChange={(e) => setCallNote(e.target.value)} placeholder="Log a call note..." />
-                  <Button onClick={saveCallLog} disabled={!callNote.trim()}>Add</Button>
-                </div>
-              </div>
-
-              {selectedDeal.stage !== 'Won' && selectedDeal.stage !== 'Lost' && (
-                <div className="flex gap-2 pt-2 border-t border-border">
-                  <Button variant="outline" className="flex-1" onClick={() => { moveStage(selectedDeal, -1); setSelectedDeal(null); }}>
-                    <ChevronLeft className="w-4 h-4 mr-1" /> Back
-                  </Button>
-                  <Button variant="destructive" onClick={() => { setLostDeal(selectedDeal); setSelectedDeal(null); }}>
-                    Mark Lost
-                  </Button>
-                  <Button variant="gradient" className="flex-1" onClick={() => { handleWin(selectedDeal); setSelectedDeal(null); }}>
-                    <Trophy className="w-4 h-4 mr-1" /> Mark Won
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Deal Dialog */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>New Deal</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm font-medium mb-1 block">Linked Lead (optional)</label>
-              <Select value={newDeal.leadId} onValueChange={(v) => {
-                const lead = leads.find((l) => l.id === v);
-                setNewDeal({
-                  ...newDeal, leadId: v,
-                  title: lead ? `${lead.name} - ${lead.requirements.join(', ') || 'Deal'}` : newDeal.title,
-                  branchId: lead?.branchId || newDeal.branchId,
-                });
-              }}>
-                <SelectTrigger><SelectValue placeholder="Choose lead" /></SelectTrigger>
+              <Select
+                value={newDeal.branchId}
+                onValueChange={(value) =>
+                  setNewDeal({ ...newDeal, branchId: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Branch" />
+                </SelectTrigger>
                 <SelectContent>
-                  {leads.filter((l) => l.leadScore !== 'Cold').map((l) => (
-                    <SelectItem key={l.id} value={l.id}>{l.name} • {l.leadScore}</SelectItem>
+                  {branches.map((branch) => (
+                    <SelectItem key={branch.id} value={branch.branchId}>
+                      {branch.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Deal Title *</label>
-              <Input value={newDeal.title} onChange={(e) => setNewDeal({ ...newDeal, title: e.target.value })} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium mb-1 block">Deal Value (₹) *</label>
-                <Input type="number" value={newDeal.dealValue || ''} onChange={(e) => setNewDeal({ ...newDeal, dealValue: Number(e.target.value) })} />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">Probability %</label>
-                <Input type="number" min={0} max={100} value={newDeal.probability} onChange={(e) => setNewDeal({ ...newDeal, probability: Number(e.target.value) })} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium mb-1 block">Expected Close</label>
-                <Input type="date" value={newDeal.expectedCloseDate} onChange={(e) => setNewDeal({ ...newDeal, expectedCloseDate: e.target.value })} />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">Branch</label>
-                <Select value={newDeal.branchId} onValueChange={(v) => setNewDeal({ ...newDeal, branchId: v })}>
-                  <SelectTrigger><SelectValue placeholder="Branch" /></SelectTrigger>
-                  <SelectContent>
-                    {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Salesperson *</label>
-              <Select value={newDeal.assignedTo} onValueChange={(v) => setNewDeal({ ...newDeal, assignedTo: v })}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>
-                  {employees.filter((e) => ['Sales Executive', 'Telecaller', 'Manager'].includes(e.role)).map((e) => (
-                    <SelectItem key={e.id} value={e.id}>{e.name} • {e.role}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Notes</label>
-              <Textarea value={newDeal.notes} onChange={(e) => setNewDeal({ ...newDeal, notes: e.target.value })} rows={2} />
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button variant="outline" className="flex-1" onClick={() => setShowAdd(false)}>Cancel</Button>
-              <Button variant="gradient" className="flex-1" onClick={handleAddDeal}>Create Deal</Button>
+
+            <Select
+              value={newDeal.assignedTo}
+              onValueChange={(value) =>
+                setNewDeal({ ...newDeal, assignedTo: value })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Assign User" />
+              </SelectTrigger>
+              <SelectContent>
+                {employees.map((emp: any) => {
+                  const id = emp._id || emp.id;
+                  const name =
+                    emp.name || emp.fullName || emp.username || emp.email;
+
+                  return (
+                    <SelectItem key={id} value={id}>
+                      {name} ({emp.role || emp.department || "User"})
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+
+            <Textarea
+              placeholder="Notes"
+              value={newDeal.notes}
+              onChange={(e) =>
+                setNewDeal({ ...newDeal, notes: e.target.value })
+              }
+            />
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowAdd(false)}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                variant="gradient"
+                className="flex-1"
+                onClick={handleAddDeal}
+              >
+                Save Deal
+              </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Lost Reason Dialog */}
-      <Dialog open={!!lostDeal} onOpenChange={() => setLostDeal(null)}>
+      <Dialog
+        open={!!selectedDeal}
+        onOpenChange={(open) => !open && setSelectedDeal(null)}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          {selectedDeal && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{selectedDeal.title}</DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-5">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-muted/40">
+                    <p className="text-xs text-muted-foreground">Customer</p>
+                    <p className="font-medium">{selectedDeal.customerName}</p>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-muted/40">
+                    <p className="text-xs text-muted-foreground">Phone</p>
+                    <p className="font-medium">
+                      {selectedDeal.contactNumber || "No phone"}
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-muted/40">
+                    <p className="text-xs text-muted-foreground">Value</p>
+                    <p className="font-medium">
+                      {formatCurrency(selectedDeal.dealValue)}
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-muted/40">
+                    <p className="text-xs text-muted-foreground">Owner</p>
+                    <p className="font-medium">
+                      {employeeName(selectedDeal.assignedTo)}
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-muted/40">
+                    <p className="text-xs text-muted-foreground">Branch</p>
+                    <p className="font-medium">
+                      {branchName(selectedDeal.branchId)}
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-muted/40">
+                    <p className="text-xs text-muted-foreground">
+                      Expected Close
+                    </p>
+                    <p className="font-medium">
+                      {selectedDeal.expectedCloseDate
+                        ? new Date(
+                            selectedDeal.expectedCloseDate
+                          ).toLocaleDateString("en-IN")
+                        : "No date"}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold mb-2">Stage</p>
+                  <div className="flex flex-wrap gap-2">
+                    {DEAL_STAGES.map((stage) => (
+                      <Button
+                        key={stage}
+                        size="sm"
+                        variant={
+                          selectedDeal.stage === stage ? "gradient" : "outline"
+                        }
+                        onClick={() => {
+                          if (stage === "Lost") {
+                            setLostDeal(selectedDeal);
+                          } else {
+                            updateDealStage(selectedDeal, stage);
+                          }
+                        }}
+                      >
+                        {stage}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold mb-2">Notes</p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedDeal.notes || "No notes"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold mb-2">Add Call Log</p>
+
+                  <Textarea
+                    placeholder="Add call notes..."
+                    value={callNote}
+                    onChange={(e) => setCallNote(e.target.value)}
+                  />
+
+                  <Button
+                    size="sm"
+                    variant="gradient"
+                    className="mt-2"
+                    onClick={saveCallLog}
+                  >
+                    <MessageSquare className="w-3 h-3 mr-1" />
+                    Save Call Log
+                  </Button>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold mb-2">
+                    Call Logs ({selectedDeal.callLogs?.length || 0})
+                  </p>
+
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {selectedDeal.callLogs?.length ? (
+                      [...selectedDeal.callLogs].reverse().map((log: any, i) => (
+                        <div
+                          key={log._id || i}
+                          className="rounded-lg bg-muted/40 p-3 text-sm"
+                        >
+                          <p>{log.notes}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {log.date
+                              ? new Date(log.date).toLocaleString("en-IN")
+                              : ""}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No call logs yet
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <Button
+                  variant="destructive"
+                  onClick={() => deleteDeal(selectedDeal)}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Delete Deal
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!lostDeal} onOpenChange={(open) => !open && setLostDeal(null)}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Mark Deal as Lost</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">{lostDeal?.title}</p>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Reason *</label>
-              <Select value={lostReason} onValueChange={setLostReason}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {lostReasons.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button variant="outline" className="flex-1" onClick={() => setLostDeal(null)}>Cancel</Button>
-              <Button variant="destructive" className="flex-1" onClick={handleConfirmLost}>Confirm Lost</Button>
+          <DialogHeader>
+            <DialogTitle>Mark Deal as Lost</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Select reason for losing this deal.
+            </p>
+
+            <Select value={lostReason} onValueChange={setLostReason}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {lostReasons.map((reason) => (
+                  <SelectItem key={reason} value={reason}>
+                    {reason}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setLostDeal(null)}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                variant="destructive"
+                className="flex-1"
+                onClick={handleConfirmLost}
+              >
+                Mark Lost
+              </Button>
             </div>
           </div>
         </DialogContent>

@@ -1,24 +1,20 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Plus,
   Search,
-  FileText,
-  Download,
   Edit,
   Trash2,
   Send,
-  CheckCircle,
-  XCircle,
-  Eye,
-  Clock,
+  MailCheck,
+  FileText,
   IndianRupee,
-  X,
 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -32,902 +28,858 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useProposalStore } from "@/store/proposalStore";
-import { useCRMStore } from "@/store/crmStore";
-import { useDealStore } from "@/store/dealStore";
-import { Proposal, ProposalService, ProposalStatus } from "@/data/proposalData";
-import { generateProposalPDF } from "@/utils/pdfGenerator";
 import { useToast } from "@/hooks/use-toast";
 
-const statusMeta: Record<ProposalStatus, { color: string; icon: any }> = {
-  Draft: { color: "bg-muted text-muted-foreground", icon: Clock },
-  Sent: { color: "bg-blue-500/10 text-blue-600 border-blue-500/30", icon: Send },
-  Viewed: { color: "bg-violet-500/10 text-violet-600 border-violet-500/30", icon: Eye },
-  Accepted: { color: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30", icon: CheckCircle },
-  Rejected: { color: "bg-rose-500/10 text-rose-600 border-rose-500/30", icon: XCircle },
+const API_URL = import.meta.env.VITE_API_URL || "https://digitalness-backend.onrender.com/api";
+
+type ProposalStatus = "Draft" | "Sent" | "Accepted" | "Rejected" | "Expired";
+
+interface ProposalService {
+  name: string;
+  description?: string;
+  price: number;
+}
+
+interface Proposal {
+  _id?: string;
+  id?: string;
+  customerName: string;
+  clientName?: string;
+  contactNumber: string;
+  clientEmail?: string;
+  email?: string;
+  businessType?: string;
+  branchId?: string;
+  title: string;
+  proposalValue: number;
+  services: ProposalService[];
+  requirements?: string;
+  notes?: string;
+  mailSubject?: string;
+  mailMessage?: string;
+  status: ProposalStatus;
+  mailSent?: boolean;
+  sentAt?: string;
+  createdAt?: string;
+}
+
+const blankForm = {
+  customerName: "",
+  contactNumber: "",
+  clientEmail: "",
+  businessType: "",
+  branchId: "",
+  title: "",
+  proposalValue: "",
+  requirements: "",
+  notes: "",
+  servicesText: "",
+  mailSubject: "",
+  mailMessage: "",
+  status: "Draft" as ProposalStatus,
 };
 
-const statuses: ProposalStatus[] = ["Draft", "Sent", "Viewed", "Accepted", "Rejected"];
+const getAuthConfig = () => {
+  const token =
+    localStorage.getItem("token") ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("accessToken");
 
-const emptyService = (): ProposalService => ({
-  id: `PS${Date.now()}${Math.floor(Math.random() * 1000)}`,
-  name: "",
-  description: "",
-  price: 0,
-});
+  return {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  };
+};
+
+const getArrayData = (data: any) => {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.proposals)) return data.proposals;
+  return [];
+};
+
+const getItemId = (item: Proposal) => item._id || item.id || "";
+
+const isValidEmail = (email: string) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
+
+const parseServices = (
+  text: string,
+  fallbackValue: number
+): ProposalService[] => {
+  if (!text.trim()) {
+    return [
+      {
+        name: "Service Package",
+        description: "Proposal service package",
+        price: fallbackValue || 0,
+      },
+    ];
+  }
+
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split("|").map((p) => p.trim());
+
+      return {
+        name: parts[0] || "Service",
+        description: parts[1] || "",
+        price: Number(parts[2]) || 0,
+      };
+    });
+};
+
+const servicesToText = (services: ProposalService[] = []) => {
+  return services
+    .map((s) => `${s.name || ""} | ${s.description || ""} | ${s.price || 0}`)
+    .join("\n");
+};
 
 export default function ProposalsPage() {
-  const { proposals, addProposal, updateProposal, deleteProposal, setStatus } =
-    useProposalStore();
-
-  const { leads } = useCRMStore();
-  const { deals, moveDealStage } = useDealStore();
   const { toast } = useToast();
 
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Proposal | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  const [form, setForm] = useState(blankForm);
+  const [loading, setLoading] = useState(false);
+  const [sendingId, setSendingId] = useState("");
 
-  const blank = (): Omit<Proposal, "id"> => ({
-    proposalNumber: `PR-${new Date().getFullYear()}-${String(
-      proposals.length + 1
-    ).padStart(3, "0")}`,
-    clientName: "",
-    clientContact: "",
-    leadId: undefined,
-    dealId: undefined,
-    services: [emptyService()],
-    totalPrice: 0,
-    durationDays: 30,
-    timeline: "30 Days",
-    scopeOfWork: "",
-    includedPoints: [""],
-    excludedPoints: [""],
-    deliverables: [""],
-    status: "Draft",
-    createdOn: new Date().toISOString().split("T")[0],
-    validUntil: new Date(Date.now() + 14 * 86400000)
-      .toISOString()
-      .split("T")[0],
-    notes: "",
-  });
+  const fetchProposals = async () => {
+    try {
+      setLoading(true);
 
-  const [form, setForm] = useState<Omit<Proposal, "id">>(blank());
+      const res = await fetch(`${API_URL}/proposals`, {
+        method: "GET",
+        ...getAuthConfig(),
+      });
 
-  const visible = useMemo(
-    () =>
-      proposals.filter((p) => {
-        const matchSearch =
-          !search ||
-          p.clientName.toLowerCase().includes(search.toLowerCase()) ||
-          p.proposalNumber.toLowerCase().includes(search.toLowerCase());
+      const data = await res.json();
 
-        const matchStatus = statusFilter === "All" || p.status === statusFilter;
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to fetch proposals");
+      }
 
-        return matchSearch && matchStatus;
-      }),
-    [proposals, search, statusFilter]
-  );
-
-  const stats = useMemo(
-    () => ({
-      total: proposals.length,
-      accepted: proposals.filter((p) => p.status === "Accepted").length,
-      pending: proposals.filter((p) => ["Sent", "Viewed"].includes(p.status))
-        .length,
-      value: proposals.reduce((sum, p) => sum + p.totalPrice, 0),
-    }),
-    [proposals]
-  );
-
-  const fmt = (n: number) => new Intl.NumberFormat("en-IN").format(n);
-
-  const openCreate = () => {
-    setEditing(null);
-    setForm(blank());
-    setShowForm(true);
-  };
-
-  const openEdit = (p: Proposal) => {
-    setEditing(p);
-    setForm({
-      ...p,
-      timeline: p.timeline || `${p.durationDays} Days`,
-      scopeOfWork: p.scopeOfWork || "",
-      includedPoints: p.includedPoints?.length ? p.includedPoints : [""],
-      excludedPoints: p.excludedPoints?.length ? p.excludedPoints : [""],
-      deliverables: p.deliverables?.length ? p.deliverables : [""],
-    });
-    setShowForm(true);
-  };
-
-  const updateService = (index: number, patch: Partial<ProposalService>) => {
-    const services = form.services.map((service, i) =>
-      i === index ? { ...service, ...patch } : service
-    );
-
-    setForm({
-      ...form,
-      services,
-      totalPrice: services.reduce((sum, service) => sum + (service.price || 0), 0),
-    });
-  };
-
-  const addService = () => {
-    setForm({ ...form, services: [...form.services, emptyService()] });
-  };
-
-  const removeService = (index: number) => {
-    const services = form.services.filter((_, i) => i !== index);
-
-    setForm({
-      ...form,
-      services,
-      totalPrice: services.reduce((sum, service) => sum + (service.price || 0), 0),
-    });
-  };
-
-  const updateListItem = (
-    field: "deliverables" | "includedPoints" | "excludedPoints",
-    index: number,
-    value: string
-  ) => {
-    setForm({
-      ...form,
-      [field]: form[field].map((item, i) => (i === index ? value : item)),
-    });
-  };
-
-  const addListItem = (
-    field: "deliverables" | "includedPoints" | "excludedPoints"
-  ) => {
-    setForm({
-      ...form,
-      [field]: [...form[field], ""],
-    });
-  };
-
-  const removeListItem = (
-    field: "deliverables" | "includedPoints" | "excludedPoints",
-    index: number
-  ) => {
-    setForm({
-      ...form,
-      [field]: form[field].filter((_, i) => i !== index),
-    });
-  };
-
-  const cleanArray = (items: string[]) =>
-    items.map((item) => item.trim()).filter(Boolean);
-
-  const handleSave = () => {
-    if (!form.clientName || !form.clientContact || form.services.length === 0) {
+      setProposals(getArrayData(data));
+    } catch (error: any) {
       toast({
-        title: "Missing fields",
-        description: "Client, contact and at least one service are required",
+        title: "Error",
+        description: error.message || "Failed to fetch proposals",
         variant: "destructive",
       });
-      return;
+    } finally {
+      setLoading(false);
     }
-
-    const cleaned = {
-      ...form,
-      deliverables: cleanArray(form.deliverables),
-      includedPoints: cleanArray(form.includedPoints),
-      excludedPoints: cleanArray(form.excludedPoints),
-      services: form.services.filter((service) => service.name.trim()),
-    };
-
-    if (editing) {
-      updateProposal(editing.id, cleaned);
-      toast({
-        title: "Proposal updated",
-        description: cleaned.proposalNumber,
-      });
-    } else {
-      addProposal({
-        id: `PROP${Date.now()}`,
-        ...cleaned,
-      });
-
-      toast({
-        title: "Proposal created",
-        description: cleaned.proposalNumber,
-      });
-    }
-
-    setShowForm(false);
   };
 
-  const handleStatus = (proposal: Proposal, newStatus: ProposalStatus) => {
-    setStatus(proposal.id, newStatus);
+  useEffect(() => {
+    fetchProposals();
+  }, []);
 
-    toast({
-      title: `Marked ${newStatus}`,
-      description: proposal.proposalNumber,
+  const filtered = useMemo(() => {
+    return proposals.filter((p) => {
+      const q = search.toLowerCase();
+
+      const matchesSearch =
+        !q ||
+        p.customerName?.toLowerCase().includes(q) ||
+        p.clientName?.toLowerCase().includes(q) ||
+        p.title?.toLowerCase().includes(q) ||
+        p.contactNumber?.toLowerCase().includes(q) ||
+        p.clientEmail?.toLowerCase().includes(q) ||
+        p.email?.toLowerCase().includes(q) ||
+        p.businessType?.toLowerCase().includes(q);
+
+      const matchesStatus =
+        statusFilter === "All" || p.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [proposals, search, statusFilter]);
+
+  const resetForm = () => {
+    setForm(blankForm);
+    setEditing(null);
+  };
+
+  const openCreate = () => {
+    resetForm();
+    setOpen(true);
+  };
+
+  const openEdit = (proposal: Proposal) => {
+    setEditing(proposal);
+
+    setForm({
+      customerName: proposal.customerName || proposal.clientName || "",
+      contactNumber: proposal.contactNumber || "",
+      clientEmail: proposal.clientEmail || proposal.email || "",
+      businessType: proposal.businessType || "",
+      branchId: proposal.branchId || "",
+      title: proposal.title || "",
+      proposalValue: String(proposal.proposalValue || ""),
+      requirements: proposal.requirements || "",
+      notes: proposal.notes || "",
+      servicesText: servicesToText(proposal.services),
+      mailSubject:
+        proposal.mailSubject ||
+        `Proposal from Digitalness CRM - ${
+          proposal.customerName || proposal.clientName || ""
+        }`,
+      mailMessage:
+        proposal.mailMessage ||
+        `Dear ${proposal.customerName || proposal.clientName || "Client"},
+
+Please find your proposal details. Kindly review and confirm.
+
+Regards,
+Digitalness Team`,
+      status: proposal.status || "Draft",
     });
 
-    if (newStatus === "Accepted" && proposal.dealId) {
-      const deal = deals.find((item) => item.id === proposal.dealId);
+    setOpen(true);
+  };
 
-      if (deal && deal.stage !== "Won" && deal.stage !== "Negotiation") {
-        moveDealStage(proposal.dealId, "Negotiation");
-
+  const handleSave = async () => {
+    try {
+      if (
+        !form.customerName.trim() ||
+        !form.contactNumber.trim() ||
+        !form.title.trim()
+      ) {
         toast({
-          title: "Deal advanced",
-          description: "Linked deal moved to Negotiation",
+          title: "Missing fields",
+          description: "Client name, contact number and proposal title are required",
+          variant: "destructive",
         });
+        return;
       }
+
+      if (form.clientEmail.trim() && !isValidEmail(form.clientEmail.trim())) {
+        toast({
+          title: "Invalid email",
+          description: "Please enter a valid client email",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const proposalValue = Number(form.proposalValue) || 0;
+
+      const payload = {
+        customerName: form.customerName,
+        clientName: form.customerName,
+        contactNumber: form.contactNumber,
+        clientEmail: form.clientEmail.trim(),
+        email: form.clientEmail.trim(),
+        businessType: form.businessType,
+        branchId: form.branchId,
+        title: form.title,
+        proposalValue,
+        requirements: form.requirements,
+        notes: form.notes,
+        services: parseServices(form.servicesText, proposalValue),
+        mailSubject:
+          form.mailSubject ||
+          `Proposal from Digitalness CRM - ${form.customerName}`,
+        mailMessage:
+          form.mailMessage ||
+          `Dear ${form.customerName},
+
+Please find your proposal details. Kindly review and confirm.
+
+Regards,
+Digitalness Team`,
+        status: form.status,
+      };
+
+      const proposalId = editing ? getItemId(editing) : "";
+      const url = editing
+        ? `${API_URL}/proposals/${proposalId}`
+        : `${API_URL}/proposals`;
+
+      const res = await fetch(url, {
+        method: editing ? "PUT" : "POST",
+        ...getAuthConfig(),
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to save proposal");
+      }
+
+      const savedProposal = data.data || data.proposal || data;
+
+      if (editing) {
+        setProposals((prev) =>
+          prev.map((p) =>
+            getItemId(p) === proposalId ? savedProposal : p
+          )
+        );
+      } else {
+        setProposals((prev) => [savedProposal, ...prev]);
+      }
+
+      toast({
+        title: "Saved successfully",
+        description: "Proposal data and requirements saved to backend",
+      });
+
+      setOpen(false);
+      resetForm();
+    } catch (error: any) {
+      toast({
+        title: "Save failed",
+        description: error.message || "Failed to save proposal",
+        variant: "destructive",
+      });
     }
   };
 
-  const handleDownload = (proposal: Proposal) => {
-    const doc = generateProposalPDF(proposal);
-    doc.save(`${proposal.proposalNumber}.pdf`);
+  const handleSendMail = async (proposal: Proposal) => {
+    try {
+      const proposalId = getItemId(proposal);
+
+      if (!proposalId) {
+        toast({
+          title: "Save proposal first",
+          description: "Please save the proposal before sending mail.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      let clientEmail = proposal.clientEmail || proposal.email || "";
+
+      if (!clientEmail.trim()) {
+        const enteredEmail = window.prompt(
+          `Client email is missing for ${
+            proposal.customerName || proposal.clientName || "this proposal"
+          }.\n\nPlease enter client email:`
+        );
+
+        if (!enteredEmail || !enteredEmail.trim()) {
+          toast({
+            title: "Email required",
+            description: "Client email is required to send proposal mail.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        clientEmail = enteredEmail.trim();
+
+        if (!isValidEmail(clientEmail)) {
+          toast({
+            title: "Invalid email",
+            description: "Please enter a valid email address.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const updateRes = await fetch(`${API_URL}/proposals/${proposalId}`, {
+          method: "PUT",
+          ...getAuthConfig(),
+          body: JSON.stringify({
+            clientEmail,
+            email: clientEmail,
+          }),
+        });
+
+        const updateData = await updateRes.json();
+
+        if (!updateRes.ok) {
+          throw new Error(updateData.message || "Failed to save client email");
+        }
+
+        const updatedProposal =
+          updateData.data || updateData.proposal || updateData;
+
+        setProposals((prev) =>
+          prev.map((p) =>
+            getItemId(p) === proposalId ? updatedProposal : p
+          )
+        );
+
+        proposal = updatedProposal;
+      } else if (!isValidEmail(clientEmail.trim())) {
+        toast({
+          title: "Invalid email",
+          description: "Saved client email is invalid. Please edit and correct it.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setSendingId(proposalId);
+
+      const res = await fetch(`${API_URL}/proposals/${proposalId}/send-mail`, {
+        method: "POST",
+        ...getAuthConfig(),
+        body: JSON.stringify({
+          clientEmail,
+          subject:
+            proposal.mailSubject ||
+            `Proposal from Digitalness CRM - ${
+              proposal.customerName || proposal.clientName
+            }`,
+          message:
+            proposal.mailMessage ||
+            `Dear ${
+              proposal.customerName || proposal.clientName || "Client"
+            },
+
+Please find your proposal details below.
+
+Regards,
+Digitalness Team`,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to send mail");
+      }
+
+      const updatedProposal = data.data || data.proposal || data;
+
+      setProposals((prev) =>
+        prev.map((p) =>
+          getItemId(p) === proposalId ? updatedProposal : p
+        )
+      );
+
+      toast({
+        title: "Mail sent successfully",
+        description: `Proposal sent to ${clientEmail}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Mail failed",
+        description: error.message || "Failed to send proposal mail",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingId("");
+    }
   };
+
+  const handleDelete = async (proposal: Proposal) => {
+    try {
+      const proposalId = getItemId(proposal);
+
+      const res = await fetch(`${API_URL}/proposals/${proposalId}`, {
+        method: "DELETE",
+        ...getAuthConfig(),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to delete proposal");
+      }
+
+      setProposals((prev) =>
+        prev.filter((p) => getItemId(p) !== proposalId)
+      );
+
+      toast({
+        title: "Deleted",
+        description: "Proposal deleted successfully",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Delete failed",
+        description: error.message || "Failed to delete proposal",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const totalValue = proposals.reduce(
+    (sum, p) => sum + Number(p.proposalValue || 0),
+    0
+  );
+
+  const sentCount = proposals.filter(
+    (p) => p.status === "Sent" || p.mailSent
+  ).length;
+
+  const acceptedCount = proposals.filter(
+    (p) => p.status === "Accepted"
+  ).length;
 
   return (
     <div className="space-y-6">
       <motion.div
-        initial={{ opacity: 0, y: -10 }}
+        initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-heading font-bold text-foreground">
-            Proposals
-          </h1>
+          <h1 className="text-2xl font-heading font-bold">Proposals</h1>
           <p className="text-muted-foreground">
-            Send, track, and convert proposals into deals
+            Save proposal requirements first, then send proposal mail to client
           </p>
         </div>
 
         <Button variant="gradient" onClick={openCreate}>
           <Plus className="w-4 h-4 mr-2" />
-          New Proposal
+          Create Proposal
         </Button>
       </motion.div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="p-4 rounded-xl bg-card border border-border shadow-card">
-          <p className="text-2xl font-heading font-bold">{stats.total}</p>
+          <FileText className="w-5 h-5 text-primary mb-2" />
           <p className="text-sm text-muted-foreground">Total Proposals</p>
+          <p className="text-2xl font-bold">{proposals.length}</p>
+        </div>
+
+        <div className="p-4 rounded-xl bg-card border border-border shadow-card">
+          <IndianRupee className="w-5 h-5 text-success mb-2" />
+          <p className="text-sm text-muted-foreground">Total Value</p>
+          <p className="text-2xl font-bold">
+            ₹{totalValue.toLocaleString("en-IN")}
+          </p>
+        </div>
+
+        <div className="p-4 rounded-xl bg-info/10 border border-info/30">
+          <MailCheck className="w-5 h-5 text-info mb-2" />
+          <p className="text-sm text-muted-foreground">Sent</p>
+          <p className="text-2xl font-bold text-info">{sentCount}</p>
         </div>
 
         <div className="p-4 rounded-xl bg-success/10 border border-success/30">
-          <p className="text-2xl font-heading font-bold text-success">
-            {stats.accepted}
-          </p>
+          <MailCheck className="w-5 h-5 text-success mb-2" />
           <p className="text-sm text-muted-foreground">Accepted</p>
-        </div>
-
-        <div className="p-4 rounded-xl bg-warning/10 border border-warning/30">
-          <p className="text-2xl font-heading font-bold text-warning">
-            {stats.pending}
-          </p>
-          <p className="text-sm text-muted-foreground">Awaiting Response</p>
-        </div>
-
-        <div className="p-4 rounded-xl bg-primary/10 border border-primary/30">
-          <p className="text-xl font-heading font-bold text-primary">
-            ₹{fmt(stats.value)}
-          </p>
-          <p className="text-sm text-muted-foreground">Total Quoted</p>
+          <p className="text-2xl font-bold text-success">{acceptedCount}</p>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col md:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+
           <Input
-            placeholder="Search by client or proposal number..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search proposal, client, email, business..."
             className="pl-10"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-48">
-            <SelectValue />
+          <SelectTrigger className="w-full md:w-[220px]">
+            <SelectValue placeholder="Filter status" />
           </SelectTrigger>
+
           <SelectContent>
             <SelectItem value="All">All Statuses</SelectItem>
-            {statuses.map((status) => (
-              <SelectItem key={status} value={status}>
-                {status}
-              </SelectItem>
-            ))}
+            <SelectItem value="Draft">Draft</SelectItem>
+            <SelectItem value="Sent">Sent</SelectItem>
+            <SelectItem value="Accepted">Accepted</SelectItem>
+            <SelectItem value="Rejected">Rejected</SelectItem>
+            <SelectItem value="Expired">Expired</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      <motion.div
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
-        {visible.map((proposal, index) => {
-          const MetaIcon = statusMeta[proposal.status].icon;
+      <div className="grid gap-4">
+        {loading && (
+          <div className="p-6 rounded-xl border bg-card text-muted-foreground">
+            Loading proposals...
+          </div>
+        )}
 
-          return (
-            <motion.div
-              key={proposal.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.04 }}
-              className="p-4 rounded-xl bg-card border border-border shadow-card hover:shadow-lg transition-all"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <p className="font-semibold text-foreground line-clamp-1">
-                    {proposal.clientName}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {proposal.proposalNumber}
-                  </p>
-                </div>
+        {!loading &&
+          filtered.map((proposal) => {
+            const id = getItemId(proposal);
+            const email = proposal.clientEmail || proposal.email;
 
-                <Badge className={statusMeta[proposal.status].color} variant="outline">
-                  <MetaIcon className="w-3 h-3 mr-1" />
-                  {proposal.status}
-                </Badge>
-              </div>
+            return (
+              <motion.div
+                key={id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-5 rounded-xl bg-card border border-border shadow-card"
+              >
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-lg font-semibold">
+                        {proposal.title}
+                      </h3>
 
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Quotation</span>
-                  <span className="font-bold text-primary flex items-center">
-                    <IndianRupee className="w-3 h-3" />
-                    {fmt(proposal.totalPrice)}
-                  </span>
-                </div>
+                      <Badge
+                        variant={
+                          proposal.status === "Accepted"
+                            ? "completed"
+                            : "outline"
+                        }
+                      >
+                        {proposal.status || "Draft"}
+                      </Badge>
 
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Services: {proposal.services.length}</span>
-                  <span>
-                    Valid:{" "}
-                    {new Date(proposal.validUntil).toLocaleDateString("en-IN", {
-                      day: "numeric",
-                      month: "short",
-                    })}
-                  </span>
-                </div>
-              </div>
+                      {proposal.mailSent && (
+                        <Badge variant="info">Mail Sent</Badge>
+                      )}
 
-              <div className="flex gap-1 mt-3 pt-3 border-t border-border">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => setSelectedProposal(proposal)}
-                >
-                  <Eye className="w-3 h-3 mr-1" />
-                  View
-                </Button>
+                      {!email && (
+                        <Badge variant="destructive">Email Missing</Badge>
+                      )}
+                    </div>
 
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => handleDownload(proposal)}
-                >
-                  <Download className="w-3 h-3 mr-1" />
-                  PDF
-                </Button>
+                    <p className="text-sm text-muted-foreground">
+                      {proposal.customerName || proposal.clientName} •{" "}
+                      {proposal.contactNumber} • {email || "No email"}
+                    </p>
 
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => openEdit(proposal)}
-                >
-                  <Edit className="w-3 h-3 mr-1" />
-                  Edit
-                </Button>
+                    <p className="text-sm">
+                      <b>Business:</b> {proposal.businessType || "-"}
+                    </p>
 
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    if (confirm(`Delete ${proposal.proposalNumber}?`)) {
-                      deleteProposal(proposal.id);
-                    }
-                  }}
-                >
-                  <Trash2 className="w-3 h-3 text-destructive" />
-                </Button>
-              </div>
+                    <p className="text-sm">
+                      <b>Requirements:</b> {proposal.requirements || "-"}
+                    </p>
 
-              {proposal.status !== "Accepted" && proposal.status !== "Rejected" && (
-                <div className="flex gap-1 mt-2">
-                  {proposal.status === "Draft" && (
+                    <p className="text-sm">
+                      <b>Proposal Value:</b> ₹
+                      {Number(proposal.proposalValue || 0).toLocaleString(
+                        "en-IN"
+                      )}
+                    </p>
+
+                    {proposal.sentAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Sent on:{" "}
+                        {new Date(proposal.sentAt).toLocaleString("en-IN")}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       size="sm"
                       variant="outline"
-                      className="flex-1"
-                      onClick={() => handleStatus(proposal, "Sent")}
+                      onClick={() => openEdit(proposal)}
                     >
-                      Send
+                      <Edit className="w-3 h-3 mr-1" />
+                      Edit
                     </Button>
-                  )}
-
-                  {(proposal.status === "Sent" || proposal.status === "Viewed") && (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="flex-1 text-success"
-                        onClick={() => handleStatus(proposal, "Accepted")}
-                      >
-                        Accept
-                      </Button>
-
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="flex-1 text-destructive"
-                        onClick={() => handleStatus(proposal, "Rejected")}
-                      >
-                        Reject
-                      </Button>
-                    </>
-                  )}
-                </div>
-              )}
-            </motion.div>
-          );
-        })}
-
-        {visible.length === 0 && (
-          <div className="col-span-full text-center py-12 text-muted-foreground">
-            <FileText className="w-12 h-12 mx-auto mb-2 opacity-30" />
-            <p>No proposals match your filters.</p>
-          </div>
-        )}
-      </motion.div>
-
-      <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editing ? "Edit Proposal" : "New Proposal"}</DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium mb-1 block">
-                  Proposal #
-                </label>
-                <Input
-                  value={form.proposalNumber}
-                  onChange={(event) =>
-                    setForm({ ...form, proposalNumber: event.target.value })
-                  }
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium mb-1 block">
-                  Linked Lead
-                </label>
-                <Select
-                  value={form.leadId || ""}
-                  onValueChange={(value) => {
-                    const lead = leads.find((item) => item.id === value);
-
-                    setForm({
-                      ...form,
-                      leadId: value,
-                      clientName: lead?.name || form.clientName,
-                      clientContact: lead?.contactNumber || form.clientContact,
-                    });
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Optional" />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    {leads.map((lead) => (
-                      <SelectItem key={lead.id} value={lead.id}>
-                        {lead.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium mb-1 block">
-                  Client Name *
-                </label>
-                <Input
-                  value={form.clientName}
-                  onChange={(event) =>
-                    setForm({ ...form, clientName: event.target.value })
-                  }
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium mb-1 block">
-                  Client Contact *
-                </label>
-                <Input
-                  value={form.clientContact}
-                  onChange={(event) =>
-                    setForm({ ...form, clientContact: event.target.value })
-                  }
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium mb-1 block">
-                Scope of Work
-              </label>
-              <Textarea
-                rows={3}
-                placeholder="Describe full scope of work..."
-                value={form.scopeOfWork}
-                onChange={(event) =>
-                  setForm({ ...form, scopeOfWork: event.target.value })
-                }
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-sm font-medium">
-                  Quotation / Services
-                </label>
-                <Button size="sm" variant="outline" onClick={addService}>
-                  <Plus className="w-3 h-3 mr-1" />
-                  Add Service
-                </Button>
-              </div>
-
-              <div className="space-y-2">
-                {form.services.map((service, index) => (
-                  <div
-                    key={service.id}
-                    className="grid grid-cols-12 gap-2 items-start p-2 rounded-lg bg-muted/30"
-                  >
-                    <Input
-                      className="col-span-12 md:col-span-3"
-                      placeholder="Service"
-                      value={service.name}
-                      onChange={(event) =>
-                        updateService(index, { name: event.target.value })
-                      }
-                    />
-
-                    <Input
-                      className="col-span-12 md:col-span-6"
-                      placeholder="Description"
-                      value={service.description}
-                      onChange={(event) =>
-                        updateService(index, { description: event.target.value })
-                      }
-                    />
-
-                    <Input
-                      className="col-span-10 md:col-span-2"
-                      type="number"
-                      placeholder="Price"
-                      value={service.price || ""}
-                      onChange={(event) =>
-                        updateService(index, {
-                          price: Number(event.target.value),
-                        })
-                      }
-                    />
 
                     <Button
-                      className="col-span-2 md:col-span-1"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeService(index)}
+                      size="sm"
+                      variant={!email ? "default" : "outline"}
+                      disabled={sendingId === id}
+                      onClick={() => handleSendMail(proposal)}
                     >
-                      <X className="w-4 h-4 text-destructive" />
+                      <Send className="w-3 h-3 mr-1" />
+                      {sendingId === id
+                        ? "Sending..."
+                        : !email
+                        ? "Add Email & Send"
+                        : "Send Mail"}
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleDelete(proposal)}
+                    >
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      Delete
                     </Button>
                   </div>
-                ))}
-              </div>
-
-              <p className="text-right mt-2 text-sm font-bold text-primary">
-                Total Quotation: ₹{fmt(form.totalPrice)}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label className="text-sm font-medium mb-1 block">
-                  Duration Days
-                </label>
-                <Input
-                  type="number"
-                  value={form.durationDays}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      durationDays: Number(event.target.value),
-                    })
-                  }
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium mb-1 block">
-                  Timeline
-                </label>
-                <Input
-                  placeholder="Example: 30 Days"
-                  value={form.timeline}
-                  onChange={(event) =>
-                    setForm({ ...form, timeline: event.target.value })
-                  }
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium mb-1 block">
-                  Valid Until
-                </label>
-                <Input
-                  type="date"
-                  value={form.validUntil}
-                  onChange={(event) =>
-                    setForm({ ...form, validUntil: event.target.value })
-                  }
-                />
-              </div>
-            </div>
-
-            <ListEditor
-              title="Deliverables"
-              items={form.deliverables}
-              placeholder="Example: 12 creatives per month"
-              onAdd={() => addListItem("deliverables")}
-              onUpdate={(index, value) =>
-                updateListItem("deliverables", index, value)
-              }
-              onRemove={(index) => removeListItem("deliverables", index)}
-            />
-
-            <ListEditor
-              title="Included Points / Benefits"
-              items={form.includedPoints}
-              placeholder="Example: Monthly performance report included"
-              onAdd={() => addListItem("includedPoints")}
-              onUpdate={(index, value) =>
-                updateListItem("includedPoints", index, value)
-              }
-              onRemove={(index) => removeListItem("includedPoints", index)}
-            />
-
-            <ListEditor
-              title="Not Included / Exclusions"
-              items={form.excludedPoints}
-              placeholder="Example: Ad budget not included"
-              onAdd={() => addListItem("excludedPoints")}
-              onUpdate={(index, value) =>
-                updateListItem("excludedPoints", index, value)
-              }
-              onRemove={(index) => removeListItem("excludedPoints", index)}
-            />
-
-            <div>
-              <label className="text-sm font-medium mb-1 block">Status</label>
-              <Select
-                value={form.status}
-                onValueChange={(value) =>
-                  setForm({ ...form, status: value as ProposalStatus })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {statuses.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {status}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium mb-1 block">Notes</label>
-              <Textarea
-                value={form.notes}
-                onChange={(event) =>
-                  setForm({ ...form, notes: event.target.value })
-                }
-                rows={2}
-              />
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => setShowForm(false)}
-              >
-                Cancel
-              </Button>
-
-              <Button
-                variant="gradient"
-                className="flex-1"
-                onClick={handleSave}
-              >
-                {editing ? "Save Changes" : "Create Proposal"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!selectedProposal}
-        onOpenChange={(open) => !open && setSelectedProposal(null)}
-      >
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          {selectedProposal && (
-            <>
-              <DialogHeader>
-                <DialogTitle>{selectedProposal.proposalNumber}</DialogTitle>
-              </DialogHeader>
-
-              <div className="space-y-5">
-                <div>
-                  <h3 className="text-lg font-semibold">
-                    {selectedProposal.clientName}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedProposal.clientContact}
-                  </p>
                 </div>
 
-                <Section title="Scope of Work">
-                  <p className="text-sm text-muted-foreground whitespace-pre-line">
-                    {selectedProposal.scopeOfWork || "No scope added"}
-                  </p>
-                </Section>
+                <div className="mt-4 border-t pt-4">
+                  <p className="text-sm font-medium mb-2">Services</p>
 
-                <Section title="Quotation">
-                  <div className="space-y-2">
-                    {selectedProposal.services.map((service) => (
+                  <div className="grid md:grid-cols-2 gap-2">
+                    {(proposal.services || []).map((service, index) => (
                       <div
-                        key={service.id}
-                        className="flex justify-between gap-4 border-b border-border pb-2 text-sm"
+                        key={index}
+                        className="p-3 rounded-lg bg-muted/40 text-sm"
                       >
-                        <div>
-                          <p className="font-medium">{service.name}</p>
-                          <p className="text-muted-foreground">
-                            {service.description}
-                          </p>
-                        </div>
-                        <p className="font-bold">₹{fmt(service.price)}</p>
+                        <p className="font-medium">{service.name}</p>
+                        <p className="text-muted-foreground">
+                          {service.description || "-"}
+                        </p>
+                        <p className="font-semibold">
+                          ₹
+                          {Number(service.price || 0).toLocaleString("en-IN")}
+                        </p>
                       </div>
                     ))}
-
-                    <p className="text-right font-bold text-primary">
-                      Total: ₹{fmt(selectedProposal.totalPrice)}
-                    </p>
                   </div>
-                </Section>
+                </div>
+              </motion.div>
+            );
+          })}
 
-                <Section title="Timeline">
-                  <p className="text-sm text-muted-foreground">
-                    {selectedProposal.timeline || `${selectedProposal.durationDays} Days`}
-                  </p>
-                </Section>
+        {!loading && filtered.length === 0 && (
+          <div className="p-8 rounded-xl border bg-card text-center text-muted-foreground">
+            No proposals found
+          </div>
+        )}
+      </div>
 
-                <BulletSection title="Deliverables" items={selectedProposal.deliverables} />
-                <BulletSection title="Included Points" items={selectedProposal.includedPoints} />
-                <BulletSection title="Not Included / Exclusions" items={selectedProposal.excludedPoints} />
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editing ? "Update Proposal" : "Create Proposal"}
+            </DialogTitle>
+          </DialogHeader>
 
-                {selectedProposal.notes && (
-                  <Section title="Notes">
-                    <p className="text-sm text-muted-foreground">
-                      {selectedProposal.notes}
-                    </p>
-                  </Section>
-                )}
-              </div>
-            </>
-          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Input
+              placeholder="Client Name *"
+              value={form.customerName}
+              onChange={(e) =>
+                setForm({ ...form, customerName: e.target.value })
+              }
+            />
+
+            <Input
+              placeholder="Contact Number *"
+              value={form.contactNumber}
+              onChange={(e) =>
+                setForm({ ...form, contactNumber: e.target.value })
+              }
+            />
+
+            <Input
+              placeholder="Client Email"
+              value={form.clientEmail}
+              onChange={(e) =>
+                setForm({ ...form, clientEmail: e.target.value })
+              }
+            />
+
+            <Input
+              placeholder="Business Type"
+              value={form.businessType}
+              onChange={(e) =>
+                setForm({ ...form, businessType: e.target.value })
+              }
+            />
+
+            <Input
+              placeholder="Branch ID"
+              value={form.branchId}
+              onChange={(e) =>
+                setForm({ ...form, branchId: e.target.value })
+              }
+            />
+
+            <Input
+              placeholder="Proposal Title *"
+              value={form.title}
+              onChange={(e) =>
+                setForm({ ...form, title: e.target.value })
+              }
+            />
+
+            <Input
+              type="number"
+              placeholder="Proposal Value"
+              value={form.proposalValue}
+              onChange={(e) =>
+                setForm({ ...form, proposalValue: e.target.value })
+              }
+            />
+
+            <Select
+              value={form.status}
+              onValueChange={(value: ProposalStatus) =>
+                setForm({ ...form, status: value })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Proposal Status" />
+              </SelectTrigger>
+
+              <SelectContent>
+                <SelectItem value="Draft">Draft</SelectItem>
+                <SelectItem value="Sent">Sent</SelectItem>
+                <SelectItem value="Accepted">Accepted</SelectItem>
+                <SelectItem value="Rejected">Rejected</SelectItem>
+                <SelectItem value="Expired">Expired</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Textarea
+              className="md:col-span-2"
+              placeholder="Client Requirements / Project Requirements"
+              value={form.requirements}
+              onChange={(e) =>
+                setForm({ ...form, requirements: e.target.value })
+              }
+            />
+
+            <Textarea
+              className="md:col-span-2"
+              placeholder={`Services - one per line:
+Service Name | Description | Price`}
+              value={form.servicesText}
+              onChange={(e) =>
+                setForm({ ...form, servicesText: e.target.value })
+              }
+            />
+
+            <Textarea
+              className="md:col-span-2"
+              placeholder="Internal Notes"
+              value={form.notes}
+              onChange={(e) =>
+                setForm({ ...form, notes: e.target.value })
+              }
+            />
+
+            <Input
+              className="md:col-span-2"
+              placeholder="Mail Subject"
+              value={form.mailSubject}
+              onChange={(e) =>
+                setForm({ ...form, mailSubject: e.target.value })
+              }
+            />
+
+            <Textarea
+              className="md:col-span-2"
+              placeholder="Mail Message"
+              value={form.mailMessage}
+              onChange={(e) =>
+                setForm({ ...form, mailMessage: e.target.value })
+              }
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+
+            <Button variant="gradient" onClick={handleSave}>
+              Save Proposal Data
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function ListEditor({
-  title,
-  items,
-  placeholder,
-  onAdd,
-  onUpdate,
-  onRemove,
-}: {
-  title: string;
-  items: string[];
-  placeholder: string;
-  onAdd: () => void;
-  onUpdate: (index: number, value: string) => void;
-  onRemove: (index: number) => void;
-}) {
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <label className="text-sm font-medium">{title}</label>
-        <Button size="sm" variant="outline" onClick={onAdd}>
-          <Plus className="w-3 h-3 mr-1" />
-          Add
-        </Button>
-      </div>
-
-      <div className="space-y-2">
-        {items.map((item, index) => (
-          <div key={index} className="flex gap-2">
-            <Input
-              value={item}
-              onChange={(event) => onUpdate(index, event.target.value)}
-              placeholder={placeholder}
-            />
-
-            <Button variant="ghost" size="icon" onClick={() => onRemove(index)}>
-              <X className="w-4 h-4 text-destructive" />
-            </Button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <h4 className="font-semibold mb-2">{title}</h4>
-      {children}
-    </div>
-  );
-}
-
-function BulletSection({
-  title,
-  items,
-}: {
-  title: string;
-  items?: string[];
-}) {
-  return (
-    <Section title={title}>
-      {items && items.length > 0 ? (
-        <ul className="list-disc ml-5 text-sm text-muted-foreground space-y-1">
-          {items.map((item, index) => (
-            <li key={index}>{item}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">No items added</p>
-      )}
-    </Section>
   );
 }
