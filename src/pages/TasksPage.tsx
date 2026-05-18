@@ -132,7 +132,6 @@ const isOverdue = (task: any) => {
   return daysToDeadline(task.dueDate) < 0;
 };
 
-
 const Spinner = ({ className = "w-4 h-4 mr-2" }: { className?: string }) => (
   <Loader2 className={`${className} animate-spin`} />
 );
@@ -406,20 +405,20 @@ export default function TasksPage() {
     });
   };
 
- const handleParentWorkChange = (workId: string) => {
-  const parentWork = tasks.find((t) => t.id === workId);
+  const handleParentWorkChange = (workId: string) => {
+    const parentWork = tasks.find((t) => t.id === workId);
 
-  setForm({
-    ...form,
-    parentWorkId: workId,
-    customerId: parentWork?.customerId || form.customerId,
-    serviceType: parentWork?.serviceType || form.serviceType,
-    assignedTo: parentWork?.assignedTo || "",
-    assignedPosition: parentWork?.assignedPosition || "",
-    priority: parentWork?.priority || form.priority,
-    deadline: parentWork?.deadline || form.deadline,
-  });
-};
+    setForm({
+      ...form,
+      parentWorkId: workId,
+      customerId: parentWork?.customerId || form.customerId,
+      serviceType: parentWork?.serviceType || form.serviceType,
+      assignedTo: parentWork?.assignedTo || "",
+      assignedPosition: parentWork?.assignedPosition || "",
+      priority: parentWork?.priority || form.priority,
+      deadline: parentWork?.deadline || form.deadline,
+    });
+  };
 
   const handleCreateTask = async () => {
     if (!form.title || !form.customerId || !form.serviceType || !form.assignedTo) {
@@ -573,7 +572,6 @@ export default function TasksPage() {
     }
   };
 
-
   const handleAssignTask = async (employeeId: string) => {
     if (!selected) return;
 
@@ -667,7 +665,7 @@ export default function TasksPage() {
         )}
       </motion.div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         <div className="p-4 rounded-xl bg-card border border-border shadow-card">
           <p className="text-2xl font-bold">{stats.pending}</p>
           <p className="text-sm text-muted-foreground">Pending</p>
@@ -781,94 +779,91 @@ export default function TasksPage() {
                 <TableSkeleton />
               ) : (
                 visible.map((t, i) => {
-                const overdue = isOverdue(t);
-                const days = daysToDeadline(t.dueDate);
+                  const overdue = isOverdue(t);
+                  const days = daysToDeadline(t.dueDate);
 
-                return (
-                  <motion.tr
-                    key={t.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.02 }}
-                    className="hover:bg-muted/30 transition-colors cursor-pointer"
-                    onClick={() => setSelected(t)}
-                  >
-                    <td className="p-3">
-                      <p className="font-medium text-sm">{t.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {t.serviceType || "General"}
-                      </p>
-                    </td>
+                  return (
+                    <motion.tr
+                      key={t.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: i * 0.02 }}
+                      className="hover:bg-muted/30 transition-colors cursor-pointer"
+                      onClick={() => setSelected(t)}
+                    >
+                      <td className="p-3">
+                        <p className="font-medium text-sm">{t.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t.serviceType || "General"}
+                        </p>
+                      </td>
 
-                    <td className="p-3 text-sm">
-                      {t.parentWorkTitle ? (
-                        <Badge variant="outline">{t.parentWorkTitle}</Badge>
-                      ) : (
-                        <span className="text-muted-foreground">Main Work</span>
-                      )}
-                    </td>
-
-                    <td className="p-3 text-sm">
-                      <p>{custName(t.customerId, t.customerName)}</p>
-                    </td>
-
-                    <td className="p-3 text-sm">
-                      <p>{empName(t.assignedTo, t.assignedName)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {t.assignedPosition || "—"}
-                      </p>
-                    </td>
-
-                    <td className="p-3">
-                      <Badge variant={statusVariant[t.status] as any}>
-                        {t.status}
-                      </Badge>
-                    </td>
-
-                    <td className="p-3">
-                      <Badge variant="outline">{t.priority || "Medium"}</Badge>
-                    </td>
-
-                    <td className="p-3">
-                      <div className="flex items-center gap-2">
-                        <Timer className="w-3 h-3 text-muted-foreground" />
-                        <span className="text-xs">{t.slaDays || 0}d SLA</span>
-                      </div>
-
-                      <div className="mt-1">
-                        {overdue ? (
-                          <Badge variant="destructive" className="text-[10px]">
-                            <AlertTriangle className="w-3 h-3 mr-1" />
-                            Overdue {Math.abs(days)}d
-                          </Badge>
-                        ) : t.status === "Completed" ? (
-                          <Badge variant="completed" className="text-[10px]">
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
-                            Done
-                          </Badge>
+                      <td className="p-3 text-sm">
+                        {t.parentWorkTitle ? (
+                          <Badge variant="outline">{t.parentWorkTitle}</Badge>
                         ) : (
-                          <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {days >= 0 ? `${days}d left` : "Due"}
-                          </span>
+                          <span className="text-muted-foreground">Main Work</span>
                         )}
-                      </div>
-                    </td>
+                      </td>
 
-                    <td className="p-3 text-sm text-muted-foreground">
-                      {t.updates?.length || 0}
-                    </td>
-                  </motion.tr>
-                );
-              })
+                      <td className="p-3 text-sm">
+                        <p>{custName(t.customerId, t.customerName)}</p>
+                      </td>
+
+                      <td className="p-3 text-sm">
+                        <p>{empName(t.assignedTo, t.assignedName)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t.assignedPosition || "—"}
+                        </p>
+                      </td>
+
+                      <td className="p-3">
+                        <Badge variant={statusVariant[t.status] as any}>
+                          {t.status}
+                        </Badge>
+                      </td>
+
+                      <td className="p-3">
+                        <Badge variant="outline">{t.priority || "Medium"}</Badge>
+                      </td>
+
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <Timer className="w-3 h-3 text-muted-foreground" />
+                          <span className="text-xs">{t.slaDays || 0}d SLA</span>
+                        </div>
+
+                        <div className="mt-1">
+                          {overdue ? (
+                            <Badge variant="destructive" className="text-[10px]">
+                              <AlertTriangle className="w-3 h-3 mr-1" />
+                              Overdue {Math.abs(days)}d
+                            </Badge>
+                          ) : t.status === "Completed" ? (
+                            <Badge variant="completed" className="text-[10px]">
+                              <CheckCircle2 className="w-3 h-3 mr-1" />
+                              Done
+                            </Badge>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {days >= 0 ? `${days}d left` : "Due"}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="p-3 text-sm text-muted-foreground">
+                        {t.updates?.length || 0}
+                      </td>
+                    </motion.tr>
+                  );
+                })
               )}
 
               {!loading && visible.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={8}
-                    className="p-6 text-center text-sm text-muted-foreground"
-                  >
+                  <td colSpan={8} className="p-6 text-center text-sm text-muted-foreground">
                     No tasks found
                   </td>
                 </tr>
@@ -913,9 +908,7 @@ export default function TasksPage() {
               disabled={createLoading}
               placeholder="Service Type"
               value={form.serviceType}
-              onChange={(e) =>
-                setForm({ ...form, serviceType: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, serviceType: e.target.value })}
             />
 
             <Select
@@ -948,9 +941,7 @@ export default function TasksPage() {
             <Select
               disabled={createLoading}
               value={form.assignedPosition}
-              onValueChange={(v) =>
-                setForm({ ...form, assignedPosition: v, assignedTo: "" })
-              }
+              onValueChange={(v) => setForm({ ...form, assignedPosition: v, assignedTo: "" })}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Assigned Position" />
@@ -971,12 +962,12 @@ export default function TasksPage() {
             >
               <SelectTrigger>
                 <SelectValue
-  placeholder={
-    form.assignedTo
-      ? empName(form.assignedTo, "Assigned Employee")
-      : "Assigned Employee"
-  }
-/>
+                  placeholder={
+                    form.assignedTo
+                      ? empName(form.assignedTo, "Assigned Employee")
+                      : "Assigned Employee"
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {suggestedEmployees.map((e: any) => {
@@ -1021,9 +1012,7 @@ export default function TasksPage() {
               type="number"
               placeholder="SLA Days"
               value={form.slaDays}
-              onChange={(e) =>
-                setForm({ ...form, slaDays: Number(e.target.value) })
-              }
+              onChange={(e) => setForm({ ...form, slaDays: Number(e.target.value) })}
             />
 
             <Textarea
@@ -1054,30 +1043,22 @@ export default function TasksPage() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className="p-3 rounded-lg bg-muted/40">
                     <p className="text-xs text-muted-foreground">Parent Work</p>
-                    <p className="font-medium">
-                      {selected.parentWorkTitle || "Main Work"}
-                    </p>
+                    <p className="font-medium">{selected.parentWorkTitle || "Main Work"}</p>
                   </div>
 
                   <div className="p-3 rounded-lg bg-muted/40">
                     <p className="text-xs text-muted-foreground">Client</p>
-                    <p className="font-medium">
-                      {custName(selected.customerId, selected.customerName)}
-                    </p>
+                    <p className="font-medium">{custName(selected.customerId, selected.customerName)}</p>
                   </div>
 
                   <div className="p-3 rounded-lg bg-muted/40">
                     <p className="text-xs text-muted-foreground">Owner</p>
-                    <p className="font-medium">
-                      {empName(selected.assignedTo, selected.assignedName)}
-                    </p>
+                    <p className="font-medium">{empName(selected.assignedTo, selected.assignedName)}</p>
                   </div>
 
                   <div className="p-3 rounded-lg bg-muted/40">
                     <p className="text-xs text-muted-foreground">Position</p>
-                    <p className="font-medium">
-                      {selected.assignedPosition || "—"}
-                    </p>
+                    <p className="font-medium">{selected.assignedPosition || "—"}</p>
                   </div>
 
                   {isAdminOrManager && (
@@ -1094,10 +1075,8 @@ export default function TasksPage() {
                         <SelectContent>
                           {employees.map((e: any) => {
                             const id = e._id || e.id;
-                            const name =
-                              e.name || e.fullName || e.username || e.email || "Employee";
-                            const position =
-                              e.position || e.employeePosition || e.role || e.department || "Employee";
+                            const name = e.name || e.fullName || e.username || e.email || "Employee";
+                            const position = e.position || e.employeePosition || e.role || e.department || "Employee";
 
                             return (
                               <SelectItem key={id} value={id}>
@@ -1182,9 +1161,7 @@ export default function TasksPage() {
                       step={0.5}
                       placeholder="Hours spent"
                       value={updTime}
-                      onChange={(e) =>
-                        setUpdTime(parseFloat(e.target.value) || 0)
-                      }
+                      onChange={(e) => setUpdTime(parseFloat(e.target.value) || 0)}
                     />
                   </div>
 
@@ -1238,9 +1215,7 @@ export default function TasksPage() {
                 {selected.managerReviewNote && (
                   <div className="p-3 rounded-lg bg-warning/10 border border-warning/30 text-sm">
                     <p className="font-semibold">Manager Note</p>
-                    <p className="text-muted-foreground">
-                      {selected.managerReviewNote}
-                    </p>
+                    <p className="text-muted-foreground">{selected.managerReviewNote}</p>
                   </div>
                 )}
 
@@ -1251,9 +1226,7 @@ export default function TasksPage() {
 
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {(selected.updates?.length || 0) === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        No updates yet
-                      </p>
+                      <p className="text-xs text-muted-foreground">No updates yet</p>
                     )}
 
                     {[...(selected.updates || [])].reverse().map((u: any) => (
@@ -1263,9 +1236,7 @@ export default function TasksPage() {
                       >
                         <div className="flex justify-between text-xs text-muted-foreground mb-1">
                           <span className="font-medium">{u.byName || u.by}</span>
-                          <span>
-                            {new Date(u.createdAt).toLocaleString("en-IN")}
-                          </span>
+                          <span>{new Date(u.createdAt).toLocaleString("en-IN")}</span>
                         </div>
 
                         <p>{u.message}</p>
