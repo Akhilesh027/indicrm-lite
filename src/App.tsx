@@ -33,6 +33,7 @@ import ExpensesPage from "./pages/ExpensesPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import AutoReportsPage from "./pages/AutoReportsPage";
 import WorkflowPage from "./pages/WorkflowPage";
+import DailyUpdatesPage from "./pages/DailyUpdatesPage";
 
 const queryClient = new QueryClient();
 
@@ -130,6 +131,7 @@ const App = () => (
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/auto-reports" element={<AutoReportsPage />} />
             <Route path="/workflow" element={<WorkflowPage />} />
+            <Route path="/daily-updates" element={<DailyUpdatesPage />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

@@ -6,7 +6,7 @@ import {
   Wallet, BarChart3, ChevronLeft, ChevronRight, LogOut, Crown,
   FileText, PackageCheck, CreditCard, Eye, TrendingUp, FileSignature,
   GitBranch, FileBox, LifeBuoy, ListChecks, MessageSquare, CheckSquare,
-  Trophy, Receipt, Bell, FileBarChart, Workflow,
+  Trophy, Receipt, Bell, FileBarChart, Workflow, CalendarCheck,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -134,6 +134,25 @@ const navItems: NavItem[] = [
     'UI/UX',
     'Frontend Dev',
     'Backend Dev',
+    'Support',
+    'Telecaller',
+  ],
+},
+
+{
+  label: 'Daily Updates',
+  path: '/daily-updates',
+  icon: CalendarCheck,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'Performance Marketer',
+    'Content Writer',
+    'Graphic Designer',
+    'UI/UX',
+    'Frontend Dev',
+    'Backend Dev',
+    'BDE',
     'Support',
     'Telecaller',
   ],
