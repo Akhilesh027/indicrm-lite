@@ -2,31 +2,11 @@ import { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  LayoutDashboard,
-  Users,
-  Target,
-  Building2,
-  ClipboardList,
-  Phone,
-  BarChart3,
-  ChevronLeft,
-  ChevronRight,
-  LogOut,
-  Crown,
-  PackageCheck,
-  Eye,
-  TrendingUp,
-  FileSignature,
-  GitBranch,
-  FileBox,
-  LifeBuoy,
-  ListChecks,
-  MessageSquare,
-  CheckSquare,
-  Trophy,
-  Bell,
-  FileBarChart,
-  Workflow,
+  LayoutDashboard, Users, Target, Building2, ClipboardList, Phone,
+  Wallet, BarChart3, ChevronLeft, ChevronRight, LogOut, Crown,
+  FileText, PackageCheck, CreditCard, Eye, TrendingUp, FileSignature,
+  GitBranch, FileBox, LifeBuoy, ListChecks, MessageSquare, CheckSquare,
+  Trophy, Receipt, Bell, FileBarChart, Workflow,
 } from 'lucide-react';
 import { Calendar, ClipboardCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -40,231 +20,264 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  {
-    label: 'Dashboard',
-    path: '/dashboard',
-    icon: LayoutDashboard,
-    roles: [
-      'Admin',
-      'Operational Manager',
-      'Performance Marketer',
-      'Content Writer',
-      'Graphic Designer',
-      'UI/UX',
-      'Frontend Dev',
-      'Backend Dev',
-      'BDE',
-      'Support',
-      'Telecaller',
-    ],
-  },
-  {
-    label: 'Employees',
-    path: '/employees',
-    icon: Users,
-    roles: ['Admin', 'Operational Manager'],
-  },
-  {
-    label: 'Leads',
-    path: '/leads',
-    icon: Target,
-    roles: [
-      'Admin',
-      'Operational Manager',
-      'BDE',
-      'Performance Marketer',
-      'Telecaller',
-    ],
-  },
-  {
-    label: 'Sales Pipeline',
-    path: '/sales-pipeline',
-    icon: TrendingUp,
-    roles: ['Admin', 'Operational Manager'],
-  },
-  {
-    label: 'Proposals',
-    path: '/proposals',
-    icon: FileSignature,
-    roles: ['Admin', 'Operational Manager', 'BDE'],
-  },
-  {
-    label: 'Customers',
-    path: '/customers',
-    icon: Building2,
-    roles: ['Admin', 'Operational Manager', 'BDE'],
-  },
-  {
-    label: 'Works',
-    path: '/works',
-    icon: ClipboardList,
-    roles: [
-      'Admin',
-      'Operational Manager',
-      'UI/UX',
-      'Frontend Dev',
-      'Backend Dev',
-    ],
-  },
-  // NEW: Daily Work Update (for employees)
-  {
-    label: 'Daily Update',
-    path: '/daily-update',
-    icon: Calendar,
-    roles: [
-      'Performance Marketer',
-      'Content Writer',
-      'Graphic Designer',
-      'UI/UX',
-      'Frontend Dev',
-      'Backend Dev',
-      'BDE',
-      'Support',
-      'Telecaller',
-      'Admin',
-      'Operational Manager',
-    ],
-  },
-  // NEW: Daily Updates Review (for managers/admin)
-  {
-    label: 'Review Updates',
-    path: '/daily-updates-review',
-    icon: ClipboardCheck,
-    roles: ['Admin', 'Operational Manager'],
-  },
-  {
-    label: 'Deliverables',
-    path: '/deliverables',
-    icon: PackageCheck,
-    roles: [
-      'Admin',
-      'Operational Manager',
-      'Content Writer',
-      'Graphic Designer',
-      'UI/UX',
-      'Frontend Dev',
-      'Backend Dev',
-    ],
-  },
-  {
-    label: 'Tasks',
-    path: '/tasks',
-    icon: ListChecks,
-    roles: [
-      'Admin',
-      'Operational Manager',
-      'Performance Marketer',
-      'Content Writer',
-      'Graphic Designer',
-      'UI/UX',
-      'Frontend Dev',
-      'Backend Dev',
-      'Support',
-      'Telecaller',
-    ],
-  },
-  {
-    label: 'Communications',
-    path: '/communications',
-    icon: MessageSquare,
-    roles: ['Admin', 'Operational Manager', 'BDE', 'Support', 'Telecaller'],
-  },
-  {
-    label: 'Approvals',
-    path: '/approvals',
-    icon: CheckSquare,
-    roles: ['Admin', 'Operational Manager'],
-  },
-  {
-    label: 'Performance',
-    path: '/performance',
-    icon: Trophy,
-    roles: ['Admin', 'Operational Manager', 'Performance Marketer'],
-  },
-  {
-    label: 'Notifications',
-    path: '/notifications',
-    icon: Bell,
-    roles: [
-      'Admin',
-      'Operational Manager',
-      'Performance Marketer',
-      'Content Writer',
-      'Graphic Designer',
-      'UI/UX',
-      'Frontend Dev',
-      'Backend Dev',
-      'BDE',
-      'Support',
-      'Telecaller',
-    ],
-  },
-  {
-    label: 'Auto Reports',
-    path: '/auto-reports',
-    icon: FileBarChart,
-    roles: ['Admin', 'Operational Manager'],
-  },
-  {
-    label: 'Workflow',
-    path: '/workflow',
-    icon: Workflow,
-    roles: ['Admin', 'Operational Manager'],
-  },
-  {
-    label: 'Client Portal',
-    path: '/client-portal',
-    icon: Eye,
-    roles: ['Admin', 'Operational Manager', 'BDE'],
-  },
-  {
-    label: 'Telecaller',
-    path: '/telecaller',
-    icon: Phone,
-    roles: ['Admin', 'Operational Manager', 'BDE'],
-  },
-  {
-    label: 'Reports',
-    path: '/reports',
-    icon: BarChart3,
-    roles: ['Admin', 'Operational Manager'],
-  },
-  {
-    label: 'Tickets',
-    path: '/tickets',
-    icon: LifeBuoy,
-    roles: ['Admin', 'Operational Manager', 'Support', 'Telecaller'],
-  },
-  {
-    label: 'Templates',
-    path: '/templates',
-    icon: FileBox,
-    roles: ['Admin', 'Operational Manager', 'Content Writer', 'Graphic Designer'],
-  },
-  {
-    label: 'Branches',
-    path: '/branches',
-    icon: GitBranch,
-    roles: ['Admin'],
-  },
-  {
-    label: 'Employee Report',
-    path: '/employee-report',
-    icon: Users,
-    roles: ['Admin', 'Operational Manager'],
-  },
-  {
-    label: 'BlogsPage',
-    path: '/blogs-page',
-    icon: Users,
-    roles: ['Admin', 'Operational Manager'],
-  },
-   {
-    label: 'RecruitmentPage',
-    path: '/recruitment-page',
-    icon: Users,
-    roles: ['Admin', 'Operational Manager'],
-  },
+{
+  label: 'Dashboard',
+  path: '/dashboard',
+  icon: LayoutDashboard,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'Performance Marketer',
+    'Content Writer',
+    'Graphic Designer',
+    'UI/UX',
+    'Frontend Dev',
+    'Backend Dev',
+    'BDE',
+    'Support',
+    'Telecaller',
+  ],
+},
+
+{
+  label: 'Employees',
+  path: '/employees',
+  icon: Users,
+  roles: ['Admin', 'Operational Manager'],
+},
+
+{
+  label: 'Leads',
+  path: '/leads',
+  icon: Target,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'BDE',
+    'Performance Marketer',
+    'Telecaller',
+  ],
+},
+
+{
+  label: 'Sales Pipeline',
+  path: '/sales-pipeline',
+  icon: TrendingUp,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    
+  ],
+},
+
+{
+  label: 'Proposals',
+  path: '/proposals',
+  icon: FileSignature,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'BDE',
+  ],
+},
+
+{
+  label: 'Customers',
+  path: '/customers',
+  icon: Building2,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'BDE',
+    
+  ],
+},
+
+{
+  label: 'Works',
+  path: '/works',
+  icon: ClipboardList,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'UI/UX',
+    'Frontend Dev',
+    'Backend Dev',
+  ],
+},
+
+{
+  label: 'Deliverables',
+  path: '/deliverables',
+  icon: PackageCheck,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'Content Writer',
+    'Graphic Designer',
+    'UI/UX',
+    'Frontend Dev',
+    'Backend Dev',
+  ],
+},
+
+{
+  label: 'Tasks',
+  path: '/tasks',
+  icon: ListChecks,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'Performance Marketer',
+    'Content Writer',
+    'Graphic Designer',
+    'UI/UX',
+    'Frontend Dev',
+    'Backend Dev',
+    'Support',
+    'Telecaller',
+  ],
+},
+
+{
+  label: 'Communications',
+  path: '/communications',
+  icon: MessageSquare,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'BDE',
+    'Support',
+    'Telecaller',
+  ],
+},
+
+{
+  label: 'Approvals',
+  path: '/approvals',
+  icon: CheckSquare,
+  roles: ['Admin', 'Operational Manager'],
+},
+
+{
+  label: 'Performance',
+  path: '/performance',
+  icon: Trophy,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'Performance Marketer',
+  
+  ],
+},
+
+{
+  label: 'Notifications',
+  path: '/notifications',
+  icon: Bell,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'Performance Marketer',
+    'Content Writer',
+    'Graphic Designer',
+    'UI/UX',
+    'Frontend Dev',
+    'Backend Dev',
+    'BDE',
+    'Support',
+    'Telecaller',
+  ],
+},
+
+{
+  label: 'Auto Reports',
+  path: '/auto-reports',
+  icon: FileBarChart,
+  roles: ['Admin', 'Operational Manager'],
+},
+
+{
+  label: 'Workflow',
+  path: '/workflow',
+  icon: Workflow,
+  roles: ['Admin', 'Operational Manager'],
+},
+
+{
+  label: 'Client Portal',
+  path: '/client-portal',
+  icon: Eye,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'BDE',
+  
+  ],
+},
+
+{
+  label: 'Telecaller',
+  path: '/telecaller',
+  icon: Phone,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'BDE',
+  ],
+},
+
+// {
+//   label: 'Accounts',
+//   path: '/accounts',
+//   icon: Wallet,
+//   roles: ['Admin', 'Operational Manager'],
+// },
+
+{
+  label: 'Reports',
+  path: '/reports',
+  icon: BarChart3,
+  roles: ['Admin', 'Operational Manager'],
+},
+
+{
+  label: 'Tickets',
+  path: '/tickets',
+  icon: LifeBuoy,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'Support',
+    'Telecaller',
+  ],
+},
+
+{
+  label: 'Templates',
+  path: '/templates',
+  icon: FileBox,
+  roles: [
+    'Admin',
+    'Operational Manager',
+    'Content Writer',
+    'Graphic Designer',
+  ],
+},
+
+{
+  label: 'Branches',
+  path: '/branches',
+  icon: GitBranch,
+  roles: ['Admin'],
+},
+
+{
+  label: 'Employee Report',
+  path: '/employee-report',
+  icon: Users,
+  roles: ['Admin', 'Operational Manager'],
+},
 ];
 
 const getStoredUser = () => {
