@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Search, Plus, Phone, MessageSquare, Building2, MapPin, Clock, CheckCircle,
   XCircle, PhoneCall, PhoneOff, UserPlus, Flame, Snowflake, Sun, TrendingUp, Loader2,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +18,6 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { ActivityTimeline } from '@/components/ActivityTimeline';
-import { Eye } from "lucide-react";
 
 // ==================== Types ====================
 type LeadScore = 'Hot' | 'Warm' | 'Cold';
@@ -59,6 +59,7 @@ interface CRMUser {
   role: string;
   department: string;
   status: 'active' | 'inactive';
+  branchId?: string;
   performance?: { completedTasks?: number };
 }
 
@@ -160,9 +161,12 @@ export default function LeadsPage() {
   const { toast } = useToast();
 
   const currentUser = getCurrentUser();
-  const isOpsManager = currentUser?.role === "Operational Manager";
+  const normalizedRole = String(currentUser?.role || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const isAdmin = normalizedRole === "admin";
+  const isOpsManager = normalizedRole === "operational manager" || normalizedRole === "operationalmanager";
   const userBranchId = currentUser?.branchId;
-  const isAdmin = currentUser?.role === "Admin";
+  const canManageLeads = isAdmin || isOpsManager;
+  const canAddLead = canManageLeads;
 
   // State
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -190,6 +194,7 @@ export default function LeadsPage() {
   // Add lead modal
   const [showAddModal, setShowAddModal] = useState(false);
   const [newLead, setNewLead] = useState({ ...emptyLead });
+  const [sendToPipelineAfterCreate, setSendToPipelineAfterCreate] = useState(false);
 
   // Assign lead modal
   const [assignLeadId, setAssignLeadId] = useState<string | null>(null);
@@ -214,24 +219,48 @@ export default function LeadsPage() {
     return branch?.name || branchId;
   };
 
-  const departments = [...new Set(employees.map((e) => e.department).filter(Boolean))];
+  // Memoised derived data from employees
+  const departments = useMemo(() => {
+    const depts = employees.map(e => e.department).filter(Boolean);
+    return [...new Set(depts)];
+  }, [employees]);
 
-  const rolesByDepartment = (department: string) => [
-    ...new Set(
-      employees
-        .filter((e) => e.department === department && e.status === 'active')
-        .map((e) => e.role)
-    ),
-  ];
+  const rolesByDepartment = useMemo(() => (dept: string) => {
+    if (!dept) return [];
+    return [
+      ...new Set(
+        employees
+          .filter(e => e.department === dept && e.status === 'active')
+          .map(e => e.role)
+          .filter(Boolean)
+      ),
+    ];
+  }, [employees]);
 
-  const employeesByDepartmentAndRole = (department: string, role: string) =>
-    employees.filter(
-      (e) => e.department === department && e.role === role && e.status === 'active'
-    );
+  const employeesByDepartmentAndRole = useMemo(() => (dept: string, role: string) => {
+    if (!dept || !role) return [];
+    return employees.filter((e) => {
+      const isActiveMatch = e.department === dept && e.role === role && e.status === 'active';
+      if (!isActiveMatch) return false;
+      if (isOpsManager && userBranchId && e.branchId) return e.branchId === userBranchId;
+      return true;
+    });
+  }, [employees, isOpsManager, userBranchId]);
 
+  const getDefaultBranchId = () => {
+    if (isOpsManager && userBranchId) return userBranchId;
+    return branches[0]?._id || '';
+  };
 
   const LoadingSpinner = ({ className = "w-4 h-4" }: { className?: string }) => (
     <Loader2 className={`${className} animate-spin`} />
+  );
+
+  const InfoCard = ({ label, value }: { label: string; value: string | number }) => (
+    <div className="rounded-xl border border-border bg-muted/40 p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-foreground">{value || "—"}</p>
+    </div>
   );
 
   const LeadTableSkeleton = () => (
@@ -246,7 +275,7 @@ export default function LeadsPage() {
                 <div className="h-3 w-20 rounded bg-muted" />
               </div>
             </div>
-          </td>
+           </td>
           <td className="p-4"><div className="h-4 w-28 rounded bg-muted" /></td>
           <td className="p-4"><div className="h-6 w-16 rounded-full bg-muted" /></td>
           <td className="p-4"><div className="h-4 w-20 rounded bg-muted" /></td>
@@ -287,8 +316,27 @@ export default function LeadsPage() {
         toast({ title: "Error", description: data.message || "Failed to fetch employees", variant: "destructive" });
         return;
       }
-      setEmployees(data);
-    } catch {
+
+      // Normalise response: handle both array and object with 'users' field
+      let employeesArray = Array.isArray(data) ? data : data.users;
+      if (!Array.isArray(employeesArray)) {
+        console.error("Unexpected employees response shape", data);
+        employeesArray = [];
+      }
+
+      // Normalise each employee – ensure strings and handle status case-insensitively
+      const normalized = employeesArray.map((emp: any) => ({
+        ...emp,
+        department: emp.department?.name || emp.department || "Other",
+        role: emp.role?.name || emp.role || "Employee",
+        branchId: emp.branchId?._id || emp.branchId || emp.branch?._id || emp.branch || '',
+        // Treat "active" or "Active" as active, everything else as inactive
+        status: (emp.status === 'active' || emp.status === 'Active') ? 'active' : 'inactive',
+      }));
+
+      setEmployees(normalized);
+    } catch (error) {
+      console.error("Fetch employees error", error);
       toast({ title: "Server Error", description: "Unable to load employees", variant: "destructive" });
     }
   };
@@ -297,7 +345,6 @@ export default function LeadsPage() {
     try {
       const res = await fetch(`${API_URL}/branches`, { headers: authHeaders() });
       if (!res.ok) {
-        // Fallback: use empty array; branches will be shown as IDs
         setBranches([]);
         return;
       }
@@ -311,34 +358,82 @@ export default function LeadsPage() {
   };
 
   const handleAddLead = async () => {
+    if (!canAddLead) {
+      toast({ title: "Access Denied", description: "Only Admin and Operational Manager can add leads", variant: "destructive" });
+      return;
+    }
+
     if (!newLead.name || !newLead.contactNumber || !newLead.businessType) {
       toast({ title: "Error", description: "Please fill name, contact and business type", variant: "destructive" });
       return;
     }
 
+    if (!newLead.branchId) {
+      toast({ title: "Error", description: "Please select branch", variant: "destructive" });
+      return;
+    }
+
+    if (!newLead.assignedTo) {
+      toast({ title: "Error", description: "Please assign this lead to an employee", variant: "destructive" });
+      return;
+    }
+
+    if (sendToPipelineAfterCreate && newLead.leadScore === "Cold") {
+      toast({ title: "Cold Lead", description: "Cold leads cannot be sent to pipeline. Change score to Hot/Warm or turn off pipeline option.", variant: "destructive" });
+      return;
+    }
+
     try {
       setAddLeadLoading(true);
+      const payload = {
+        ...newLead,
+        branchId: isOpsManager && userBranchId ? userBranchId : newLead.branchId,
+        status: "New",
+        lastContactDate: new Date().toISOString(),
+        inPipeline: false,
+      };
+
       const res = await fetch(`${API_URL}/leads`, {
         method: "POST",
         headers: jsonHeaders(),
-        body: JSON.stringify({
-          ...newLead,
-          status: "New",
-          lastContactDate: new Date().toISOString(),
-          inPipeline: false,
-        }),
+        body: JSON.stringify(payload),
       });
+
       const data = await res.json();
       if (!res.ok) {
         toast({ title: "Error", description: data.message || "Failed to add lead", variant: "destructive" });
         return;
       }
-      toast({ title: "Lead Added", description: `${newLead.name} added successfully` });
+
+      const createdLead = data.lead || data.data || data;
+      const createdLeadId = createdLead?._id || createdLead?.id;
+
+      if (sendToPipelineAfterCreate && createdLeadId) {
+        const pipelineRes = await fetch(`${API_URL}/leads/${createdLeadId}/push-to-pipeline`, {
+          method: "POST",
+          headers: authHeaders(),
+        });
+        const pipelineData = await pipelineRes.json().catch(() => ({}));
+        if (!pipelineRes.ok) {
+          toast({
+            title: "Lead Added, Pipeline Failed",
+            description: pipelineData.message || "Lead was saved and assigned, but could not be moved to pipeline.",
+            variant: "destructive",
+          });
+        } else {
+          toast({ title: "Lead Added", description: `${newLead.name} was assigned and moved to pipeline` });
+        }
+      } else {
+        toast({ title: "Lead Added", description: `${newLead.name} added and assigned successfully` });
+      }
+
       setShowAddModal(false);
-      setNewLead({ ...emptyLead, branchId: branches[0]?._id || '' });
+      setNewLead({ ...emptyLead, branchId: getDefaultBranchId() });
+      setSendToPipelineAfterCreate(false);
       setSelectedDepartment('');
       setSelectedRole('');
-      fetchLeads();
+      await fetchLeads();
+      if (sendToPipelineAfterCreate) navigate("/sales-pipeline");
     } catch {
       toast({ title: "Server Error", description: "Unable to add lead", variant: "destructive" });
     } finally {
@@ -378,6 +473,10 @@ export default function LeadsPage() {
   };
 
   const handlePushToPipeline = async (lead: Lead) => {
+    if (!canManageLeads) {
+      toast({ title: "Access Denied", description: "Only Admin and Operational Manager can move leads to pipeline", variant: "destructive" });
+      return;
+    }
     if (lead.leadScore === "Cold") {
       toast({ title: "Cold Lead", description: "Cold leads stay in nurture, not pipeline.", variant: "destructive" });
       return;
@@ -404,6 +503,10 @@ export default function LeadsPage() {
   };
 
   const handleAssignLead = async () => {
+    if (!canManageLeads) {
+      toast({ title: "Access Denied", description: "Only Admin and Operational Manager can assign leads", variant: "destructive" });
+      return;
+    }
     if (!assignLeadId || !assignEmployeeId) {
       toast({ title: "Error", description: "Please select employee", variant: "destructive" });
       return;
@@ -459,13 +562,12 @@ export default function LeadsPage() {
       await Promise.all([fetchEmployees(), fetchBranches(), fetchLeads()]);
       setLoading(false);
     };
-
     loadPageData();
   }, []);
 
   useEffect(() => {
     if (branches.length > 0 && !newLead.branchId) {
-      setNewLead(prev => ({ ...prev, branchId: branches[0]._id }));
+      setNewLead(prev => ({ ...prev, branchId: getDefaultBranchId() }));
     }
   }, [branches]);
 
@@ -479,10 +581,12 @@ export default function LeadsPage() {
           <h1 className="text-2xl font-heading font-bold text-foreground">Leads Management</h1>
           <p className="text-muted-foreground">Track and manage your sales pipeline</p>
         </div>
-        <Button variant="gradient" onClick={() => setShowAddModal(true)} disabled={loading}>
-          {loading ? <LoadingSpinner className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-          Add Lead
-        </Button>
+        {canAddLead && (
+          <Button variant="gradient" onClick={() => { setNewLead((prev) => ({ ...prev, branchId: prev.branchId || getDefaultBranchId() })); setShowAddModal(true); }} disabled={loading}>
+            {loading ? <LoadingSpinner className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+            Add Lead
+          </Button>
+        )}
       </motion.div>
 
       {/* Stats Cards */}
@@ -527,7 +631,6 @@ export default function LeadsPage() {
           </SelectContent>
         </Select>
 
-        {/* Branch filter: hidden for Operational Manager (they only see their own branch) */}
         {!isOpsManager && (
           <Select value={branchFilter} onValueChange={setBranchFilter}>
             <SelectTrigger className="w-full lg:w-48"><SelectValue placeholder="Branch" /></SelectTrigger>
@@ -580,109 +683,117 @@ export default function LeadsPage() {
                     </div>
                   </td>
                 </tr>
-              ) : filteredLeads.map((lead, index) => (
-                <motion.tr key={lead._id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.03 }} className="hover:bg-muted/30 transition-colors">
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-primary font-semibold">
-                        {lead.name.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">{lead.name}</p>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Phone className="w-3 h-3" />{lead.contactNumber}
+              ) : (
+                filteredLeads.map((lead, index) => (
+                  <motion.tr key={lead._id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.03 }} className="hover:bg-muted/30 transition-colors">
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-primary font-semibold">
+                          {lead.name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground">{lead.name}</p>
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Phone className="w-3 h-3" />{lead.contactNumber}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-1 text-sm">
-                      <Building2 className="w-4 h-4 text-muted-foreground" />
-                      <span>{lead.businessType}</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                      <MapPin className="w-3 h-3" />{lead.city}
-                    </div>
-                   </td>
-                  <td className="p-4">
-                    {lead.leadScore ? (() => {
-                      const m = scoreMeta[lead.leadScore];
-                      const Icon = m.icon;
-                      return (
-                        <Badge className={m.color} variant="outline">
-                          <Icon className="w-3 h-3 mr-1" /> {lead.leadScore}
-                        </Badge>
-                      );
-                    })() : <Badge variant="secondary">{lead.source}</Badge>}
-                    {lead.budgetRange && (
-                      <p className="text-[10px] text-muted-foreground mt-1">{lead.budgetRange}</p>
-                    )}
-                   </td>
-                  <td className="p-4">
-                    <p className="text-sm">{getBranchName(lead.branchId)}</p>
-                   </td>
-                  <td className="p-4">
-                    <button
-                      onClick={() => {
-                        setAssignLeadId(lead._id);
-                        setAssignDepartment('');
-                        setAssignRole('');
-                        setAssignEmployeeId('');
-                      }}
-                      className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer underline-offset-2 hover:underline"
-                    >
-                      {getEmployeeName(lead.assignedTo)}
-                    </button>
-                   </td>
-                  <td className="p-4">
-                    <Badge variant={statusColors[lead.status] as any}>{lead.status}</Badge>
-                   </td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                      <Clock className="w-4 h-4" />
-                      {lead.nextFollowUpDate
-                        ? new Date(lead.nextFollowUpDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-                        : new Date(lead.lastContactDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                    </div>
-                   </td>
-                  <td className="p-4">
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => setViewLead(lead)}
-                        className="text-primary hover:text-primary" title="View Lead">
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleCallPopup(lead)}
-                        className="text-accent hover:text-accent" title="Log Call">
-                        <PhoneCall className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon"
-                        onClick={() => window.open(`https://wa.me/91${lead.contactNumber}`, '_blank')}
-                        className="text-success hover:text-success" title="WhatsApp">
-                        <MessageSquare className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon"
-                        onClick={() => {
-                          setAssignLeadId(lead._id);
-                          setAssignDepartment('');
-                          setAssignRole('');
-                          setAssignEmployeeId('');
-                        }}
-                        className="text-primary hover:text-primary" title="Assign Lead">
-                        <UserPlus className="w-4 h-4" />
-                      </Button>
-                      {lead.leadScore !== 'Cold' && (
-                        <Button variant="ghost" size="icon"
-                          onClick={() => handlePushToPipeline(lead)}
-                          disabled={pipelineLoadingId === lead._id}
-                          className="text-warning hover:text-warning" title="Add to Sales Pipeline">
-                          {pipelineLoadingId === lead._id ? <LoadingSpinner /> : <TrendingUp className="w-4 h-4" />}
-                        </Button>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex items-center gap-1 text-sm">
+                        <Building2 className="w-4 h-4 text-muted-foreground" />
+                        <span>{lead.businessType}</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                        <MapPin className="w-3 h-3" />{lead.city}
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      {lead.leadScore ? (() => {
+                        const m = scoreMeta[lead.leadScore];
+                        const Icon = m.icon;
+                        return (
+                          <Badge className={m.color} variant="outline">
+                            <Icon className="w-3 h-3 mr-1" /> {lead.leadScore}
+                          </Badge>
+                        );
+                      })() : <Badge variant="secondary">{lead.source}</Badge>}
+                      {lead.budgetRange && (
+                        <p className="text-[10px] text-muted-foreground mt-1">{lead.budgetRange}</p>
                       )}
-                    </div>
-                   </td>
-                </motion.tr>
-              ))}
+                    </td>
+                    <td className="p-4">
+                      <p className="text-sm">{getBranchName(lead.branchId)}</p>
+                    </td>
+                    <td className="p-4">
+                      {canManageLeads ? (
+                        <button
+                          onClick={() => {
+                            setAssignLeadId(lead._id);
+                            setAssignDepartment('');
+                            setAssignRole('');
+                            setAssignEmployeeId('');
+                          }}
+                          className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer underline-offset-2 hover:underline"
+                        >
+                          {getEmployeeName(lead.assignedTo)}
+                        </button>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">{getEmployeeName(lead.assignedTo)}</span>
+                      )}
+                    </td>
+                    <td className="p-4">
+                      <Badge variant={statusColors[lead.status] as any}>{lead.status}</Badge>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                        <Clock className="w-4 h-4" />
+                        {lead.nextFollowUpDate
+                          ? new Date(lead.nextFollowUpDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                          : new Date(lead.lastContactDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => setViewLead(lead)}
+                          className="text-primary hover:text-primary" title="View Lead">
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleCallPopup(lead)}
+                          className="text-accent hover:text-accent" title="Log Call">
+                          <PhoneCall className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon"
+                          onClick={() => window.open(`https://wa.me/91${lead.contactNumber}`, '_blank')}
+                          className="text-success hover:text-success" title="WhatsApp">
+                          <MessageSquare className="w-4 h-4" />
+                        </Button>
+                        {canManageLeads && (
+                          <Button variant="ghost" size="icon"
+                            onClick={() => {
+                              setAssignLeadId(lead._id);
+                              setAssignDepartment('');
+                              setAssignRole('');
+                              setAssignEmployeeId('');
+                            }}
+                            className="text-primary hover:text-primary" title="Assign Lead">
+                            <UserPlus className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {canManageLeads && lead.leadScore !== 'Cold' && !lead.inPipeline && (
+                          <Button variant="ghost" size="icon"
+                            onClick={() => handlePushToPipeline(lead)}
+                            disabled={pipelineLoadingId === lead._id}
+                            className="text-warning hover:text-warning" title="Add to Sales Pipeline">
+                            {pipelineLoadingId === lead._id ? <LoadingSpinner /> : <TrendingUp className="w-4 h-4" />}
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </motion.tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -708,7 +819,7 @@ export default function LeadsPage() {
 
               <div>
                 <label className="text-sm font-medium text-foreground mb-2 block">Requirements</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {requirementOptions.map((req) => (
                     <div key={req} className="flex items-center gap-2">
                       <Checkbox
@@ -737,7 +848,7 @@ export default function LeadsPage() {
 
               <div>
                 <label className="text-sm font-medium text-foreground mb-2 block">Call Result</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {['Own Close', 'Own Loss', 'Call Back', 'No Response', 'Follow Up', 'Demo Completed'].map((status) => (
                     <Button key={status} variant={callStatus === status ? 'default' : 'outline'} size="sm"
                       onClick={() => setCallStatus(status as Lead['status'])} className="justify-start">
@@ -775,83 +886,284 @@ export default function LeadsPage() {
 
       {/* View Lead Dialog */}
       <Dialog open={!!viewLead} onOpenChange={() => setViewLead(null)}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader><DialogTitle>Lead Details</DialogTitle></DialogHeader>
+        <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-3xl lg:max-w-5xl max-h-[90vh] overflow-y-auto p-0">
+          <DialogHeader className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-4 backdrop-blur sm:px-6">
+            <DialogTitle className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <span>Lead Details</span>
+              {viewLead && <Badge variant={statusColors[viewLead.status] as any} className="w-fit">{viewLead.status}</Badge>}
+            </DialogTitle>
+          </DialogHeader>
+
           {viewLead && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-lg bg-muted/50"><p className="text-sm text-muted-foreground">Lead Name</p><p className="font-semibold">{viewLead.name}</p></div>
-                <div className="p-4 rounded-lg bg-muted/50"><p className="text-sm text-muted-foreground">Contact Number</p><p className="font-semibold">{viewLead.contactNumber}</p></div>
-                <div className="p-4 rounded-lg bg-muted/50"><p className="text-sm text-muted-foreground">Business Type</p><p className="font-semibold">{viewLead.businessType}</p></div>
-                <div className="p-4 rounded-lg bg-muted/50"><p className="text-sm text-muted-foreground">City</p><p className="font-semibold">{viewLead.city || "—"}</p></div>
-                <div className="p-4 rounded-lg bg-muted/50"><p className="text-sm text-muted-foreground">Assigned To</p><p className="font-semibold">{getEmployeeName(viewLead.assignedTo)}</p></div>
-                <div className="p-4 rounded-lg bg-muted/50"><p className="text-sm text-muted-foreground">Status</p><p className="font-semibold">{viewLead.status}</p></div>
-                <div className="p-4 rounded-lg bg-muted/50"><p className="text-sm text-muted-foreground">Lead Score</p><p className="font-semibold">{viewLead.leadScore}</p></div>
-                <div className="p-4 rounded-lg bg-muted/50"><p className="text-sm text-muted-foreground">Budget Range</p><p className="font-semibold">{viewLead.budgetRange || "—"}</p></div>
+            <div className="space-y-5 px-4 pb-5 pt-4 sm:px-6">
+              <div className="rounded-2xl border border-border bg-gradient-to-br from-primary/10 via-card to-accent/10 p-4 sm:p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-xl font-bold text-primary sm:h-16 sm:w-16">
+                      {viewLead.name?.charAt(0) || "L"}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="truncate text-lg font-semibold text-foreground sm:text-2xl">{viewLead.name}</h3>
+                      <p className="text-sm text-muted-foreground">{viewLead.businessType || "—"} • {viewLead.city || "—"}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open(`tel:${viewLead.contactNumber}`, "_self")}
+                    >
+                      <Phone className="mr-2 h-4 w-4" /> Call
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open(`https://wa.me/91${viewLead.contactNumber}`, "_blank")}
+                    >
+                      <MessageSquare className="mr-2 h-4 w-4" /> WhatsApp
+                    </Button>
+                  </div>
+                </div>
               </div>
-              <div><p className="font-semibold mb-2">Requirements</p><div className="flex flex-wrap gap-2">{viewLead.requirements?.length ? viewLead.requirements.map((req) => <Badge key={req} variant="secondary">{req}</Badge>) : <p className="text-sm text-muted-foreground">No requirements</p>}</div></div>
-              <div><p className="font-semibold mb-2">Notes</p><div className="space-y-2">{viewLead.notes?.length ? viewLead.notes.map((note, index) => <div key={index} className="p-3 rounded-lg bg-muted/50 text-sm">{note}</div>) : <p className="text-sm text-muted-foreground">No notes</p>}</div></div>
-              <div><p className="font-semibold mb-2">Call Logs</p><div className="space-y-3 max-h-64 overflow-y-auto">{viewLead.callLogs?.length ? viewLead.callLogs.map((log) => (<div key={log._id} className="p-3 rounded-lg border bg-card"><div className="flex justify-between gap-3"><p className="font-medium">{log.callStatus}</p><p className="text-xs text-muted-foreground">{log.calledAt ? new Date(log.calledAt).toLocaleString("en-IN") : "—"}</p></div>{log.notes && <p className="text-sm text-muted-foreground mt-1">{log.notes}</p>}{log.followUpDate && <p className="text-xs text-muted-foreground mt-1">Follow-up: {new Date(log.followUpDate).toLocaleDateString("en-IN")}</p>}</div>)) : <p className="text-sm text-muted-foreground">No call logs</p>}</div></div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <InfoCard label="Contact Number" value={viewLead.contactNumber} />
+                <InfoCard label="Branch" value={getBranchName(viewLead.branchId)} />
+                <InfoCard label="Assigned To" value={getEmployeeName(viewLead.assignedTo)} />
+                <InfoCard label="Source" value={viewLead.source || "—"} />
+                <InfoCard label="Lead Score" value={viewLead.leadScore || "—"} />
+                <InfoCard label="Budget Range" value={viewLead.budgetRange || "—"} />
+                <InfoCard label="Timeline" value={viewLead.timeline || "—"} />
+                <InfoCard label="Probability" value={`${viewLead.probability || 0}%`} />
+                <InfoCard label="Requirement Clarity" value={viewLead.requirementClarity || "—"} />
+                <InfoCard label="Budget Match" value={viewLead.budgetMatch || "—"} />
+                <InfoCard label="Decision Maker" value={viewLead.decisionMaker || "—"} />
+                <InfoCard
+                  label="Expected Closing"
+                  value={viewLead.expectedClosingDate ? new Date(viewLead.expectedClosingDate).toLocaleDateString("en-IN") : "—"}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-border bg-card p-4">
+                  <p className="mb-3 font-semibold text-foreground">Requirements</p>
+                  <div className="flex flex-wrap gap-2">
+                    {viewLead.requirements?.length ? (
+                      viewLead.requirements.map((req) => <Badge key={req} variant="secondary">{req}</Badge>)
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No requirements</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-card p-4">
+                  <p className="mb-3 font-semibold text-foreground">Follow-up Details</p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <InfoCard
+                      label="Next Follow-up"
+                      value={viewLead.nextFollowUpDate ? new Date(viewLead.nextFollowUpDate).toLocaleDateString("en-IN") : "—"}
+                    />
+                    <InfoCard
+                      label="Last Contact"
+                      value={viewLead.lastContactDate ? new Date(viewLead.lastContactDate).toLocaleDateString("en-IN") : "—"}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-border bg-card p-4">
+                  <p className="mb-3 font-semibold text-foreground">Notes</p>
+                  <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                    {viewLead.notes?.length ? (
+                      viewLead.notes.map((note, index) => (
+                        <div key={index} className="rounded-xl bg-muted/50 p-3 text-sm leading-relaxed">{note}</div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No notes</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-card p-4">
+                  <p className="mb-3 font-semibold text-foreground">Call Logs</p>
+                  <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+                    {viewLead.callLogs?.length ? (
+                      viewLead.callLogs.map((log) => (
+                        <div key={log._id} className="rounded-xl border border-border bg-muted/30 p-3">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="font-medium text-foreground">{log.callStatus}</p>
+                            <p className="text-xs text-muted-foreground">{log.calledAt ? new Date(log.calledAt).toLocaleString("en-IN") : "—"}</p>
+                          </div>
+                          {log.notes && <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{log.notes}</p>}
+                          {log.followUpDate && (
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              Follow-up: {new Date(log.followUpDate).toLocaleDateString("en-IN")}
+                            </p>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No call logs</p>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
       {/* Add Lead Dialog */}
-      <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-        <DialogContent className="max-w-lg">
+      <Dialog open={showAddModal && canAddLead} onOpenChange={setShowAddModal}>
+        <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-2xl lg:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Add New Lead</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><label className="text-sm font-medium text-foreground mb-1 block">Name *</label><Input value={newLead.name} onChange={(e) => setNewLead({ ...newLead, name: e.target.value })} placeholder="Business/Person name" /></div>
               <div><label className="text-sm font-medium text-foreground mb-1 block">Contact Number *</label><Input value={newLead.contactNumber} onChange={(e) => setNewLead({ ...newLead, contactNumber: e.target.value })} placeholder="Phone number" /></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><label className="text-sm font-medium text-foreground mb-1 block">Business Type *</label><Input value={newLead.businessType} onChange={(e) => setNewLead({ ...newLead, businessType: e.target.value })} placeholder="e.g. Real Estate" /></div>
               <div><label className="text-sm font-medium text-foreground mb-1 block">City</label><Input value={newLead.city} onChange={(e) => setNewLead({ ...newLead, city: e.target.value })} placeholder="City" /></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><label className="text-sm font-medium text-foreground mb-1 block">Source</label><Select value={newLead.source} onValueChange={(v: Lead['source']) => setNewLead({ ...newLead, source: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Telecaller">Telecaller</SelectItem><SelectItem value="Executive">Executive</SelectItem><SelectItem value="Website">Website</SelectItem><SelectItem value="Ad">Ad</SelectItem></SelectContent></Select></div>
-              <div><label className="text-sm font-medium text-foreground mb-1 block">Branch</label><Select value={newLead.branchId} onValueChange={(v) => setNewLead({ ...newLead, branchId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{branches.map((b) => <SelectItem key={b._id} value={b.branchId}>{b.name}</SelectItem>)}</SelectContent></Select></div>
+              <div><label className="text-sm font-medium text-foreground mb-1 block">Branch</label><Select value={newLead.branchId} disabled={isOpsManager} onValueChange={(v) => setNewLead({ ...newLead, branchId: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{branches.map((b) => <SelectItem key={b._id} value={b._id}>{b.name}</SelectItem>)}</SelectContent></Select></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><label className="text-sm font-medium text-foreground mb-1 block">Lead Score</label><Select value={newLead.leadScore} onValueChange={(v: LeadScore) => setNewLead({ ...newLead, leadScore: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{leadScores.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select></div>
               <div><label className="text-sm font-medium text-foreground mb-1 block">Budget Range</label><Select value={newLead.budgetRange} onValueChange={(v) => setNewLead({ ...newLead, budgetRange: v })}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent>{budgetRanges.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent></Select></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><label className="text-sm font-medium text-foreground mb-1 block">Requirement Clarity</label><Select value={newLead.requirementClarity} onValueChange={(v: LeadClarity) => setNewLead({ ...newLead, requirementClarity: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{clarityOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
               <div><label className="text-sm font-medium text-foreground mb-1 block">Timeline</label><Select value={newLead.timeline} onValueChange={(v: LeadTimeline) => setNewLead({ ...newLead, timeline: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{timelines.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div><label className="text-sm font-medium text-foreground mb-1 block">Budget Match</label><Select value={newLead.budgetMatch} onValueChange={(v: YesNo) => setNewLead({ ...newLead, budgetMatch: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{yesNoOptions.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent></Select></div>
               <div><label className="text-sm font-medium text-foreground mb-1 block">Decision Maker</label><Select value={newLead.decisionMaker} onValueChange={(v: YesNo) => setNewLead({ ...newLead, decisionMaker: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{yesNoOptions.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent></Select></div>
               <div><label className="text-sm font-medium text-foreground mb-1 block">Probability %</label><Input type="number" min={0} max={100} value={newLead.probability} onChange={(e) => setNewLead({ ...newLead, probability: Number(e.target.value) })} /></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><label className="text-sm font-medium text-foreground mb-1 block">Expected Close</label><Input type="date" value={newLead.expectedClosingDate} onChange={(e) => setNewLead({ ...newLead, expectedClosingDate: e.target.value })} /></div>
               <div><label className="text-sm font-medium text-foreground mb-1 block">Next Follow-up</label><Input type="date" value={newLead.nextFollowUpDate} onChange={(e) => setNewLead({ ...newLead, nextFollowUpDate: e.target.value })} /></div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div><label className="text-sm font-medium text-foreground mb-1 block">Department</label><Select value={selectedDepartment} onValueChange={(v) => { setSelectedDepartment(v); setSelectedRole(''); setNewLead({ ...newLead, assignedTo: '' }); }}><SelectTrigger><SelectValue placeholder="Department" /></SelectTrigger><SelectContent>{departments.map((dept) => <SelectItem key={dept} value={dept}>{dept}</SelectItem>)}</SelectContent></Select></div>
               <div><label className="text-sm font-medium text-foreground mb-1 block">Role</label><Select value={selectedRole} disabled={!selectedDepartment} onValueChange={(v) => { setSelectedRole(v); setNewLead({ ...newLead, assignedTo: '' }); }}><SelectTrigger><SelectValue placeholder="Role" /></SelectTrigger><SelectContent>{rolesByDepartment(selectedDepartment).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent></Select></div>
               <div><label className="text-sm font-medium text-foreground mb-1 block">Assign To</label><Select value={newLead.assignedTo} disabled={!selectedRole} onValueChange={(v) => setNewLead({ ...newLead, assignedTo: v })}><SelectTrigger><SelectValue placeholder="Employee" /></SelectTrigger><SelectContent>{employeesByDepartmentAndRole(selectedDepartment, selectedRole).map((e) => <SelectItem key={e._id} value={e._id}>{e.name}</SelectItem>)}</SelectContent></Select></div>
             </div>
-            <div><label className="text-sm font-medium text-foreground mb-2 block">Requirements</label><div className="grid grid-cols-2 gap-2">{requirementOptions.map((req) => (<div key={req} className="flex items-center gap-2"><Checkbox id={`new-${req}`} checked={newLead.requirements.includes(req)} onCheckedChange={(checked) => { if (checked) setNewLead({ ...newLead, requirements: [...newLead.requirements, req] }); else setNewLead({ ...newLead, requirements: newLead.requirements.filter((r) => r !== req) }); }} /><label htmlFor={`new-${req}`} className="text-sm">{req}</label></div>))}</div></div>
+            <div><label className="text-sm font-medium text-foreground mb-2 block">Requirements</label><div className="grid grid-cols-1 sm:grid-cols-2 gap-2">{requirementOptions.map((req) => (<div key={req} className="flex items-center gap-2"><Checkbox id={`new-${req}`} checked={newLead.requirements.includes(req)} onCheckedChange={(checked) => { if (checked) setNewLead({ ...newLead, requirements: [...newLead.requirements, req] }); else setNewLead({ ...newLead, requirements: newLead.requirements.filter((r) => r !== req) }); }} /><label htmlFor={`new-${req}`} className="text-sm">{req}</label></div>))}</div></div>
+            <div className="rounded-xl border border-border bg-muted/40 p-3">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="send-to-pipeline"
+                  checked={sendToPipelineAfterCreate}
+                  onCheckedChange={(checked) => setSendToPipelineAfterCreate(Boolean(checked))}
+                  disabled={newLead.leadScore === 'Cold'}
+                />
+                <div>
+                  <label htmlFor="send-to-pipeline" className="text-sm font-medium text-foreground">Send this lead to Sales Pipeline after saving</label>
+                  <p className="mt-1 text-xs text-muted-foreground">Lead will be created, assigned to the selected employee, then converted into a pipeline deal. Cold leads are blocked from pipeline.</p>
+                </div>
+              </div>
+            </div>
             <div className="flex gap-2 pt-4"><Button variant="outline" onClick={() => setShowAddModal(false)} disabled={addLeadLoading} className="flex-1">Cancel</Button><Button variant="gradient" onClick={handleAddLead} disabled={addLeadLoading} className="flex-1">{addLeadLoading && <LoadingSpinner className="w-4 h-4 mr-2" />}{addLeadLoading ? "Adding..." : "Add Lead"}</Button></div>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Assign Lead Dialog */}
-      <Dialog open={!!assignLeadId} onOpenChange={() => setAssignLeadId(null)}>
+      <Dialog open={!!assignLeadId && canManageLeads} onOpenChange={() => setAssignLeadId(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Assign Lead</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="p-3 rounded-lg bg-muted/50"><p className="font-medium text-foreground">{leads.find((l) => l._id === assignLeadId)?.name}</p><p className="text-sm text-muted-foreground">Currently: {getEmployeeName(leads.find((l) => l._id === assignLeadId)?.assignedTo || '')}</p></div>
-            <div><label className="text-sm font-medium text-foreground mb-1 block">Step 1: Select Department</label><Select value={assignDepartment} onValueChange={(v) => { setAssignDepartment(v); setAssignRole(''); setAssignEmployeeId(''); }}><SelectTrigger><SelectValue placeholder="Choose department first" /></SelectTrigger><SelectContent>{departments.map((dept) => <SelectItem key={dept} value={dept}>{dept}</SelectItem>)}</SelectContent></Select></div>
-            {assignDepartment && (<div><label className="text-sm font-medium text-foreground mb-1 block">Step 2: Select Role</label><Select value={assignRole} onValueChange={(v) => { setAssignRole(v); setAssignEmployeeId(''); }}><SelectTrigger><SelectValue placeholder="Choose role" /></SelectTrigger><SelectContent>{rolesByDepartment(assignDepartment).map((r) => <SelectItem key={r} value={r}>{r} ({employeesByDepartmentAndRole(assignDepartment, r).length} members)</SelectItem>)}</SelectContent></Select></div>)}
-            {assignRole && (<div><label className="text-sm font-medium text-foreground mb-1 block">Step 3: Select {assignRole}</label><div className="space-y-2 max-h-48 overflow-y-auto">{employeesByDepartmentAndRole(assignDepartment, assignRole).map((emp) => (<div key={emp._id} onClick={() => setAssignEmployeeId(emp._id)} className={`p-3 rounded-lg border cursor-pointer transition-all ${assignEmployeeId === emp._id ? 'border-primary bg-primary/5 shadow-sm' : 'border-border hover:border-primary/50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-primary font-semibold text-sm">{emp.name.charAt(0)}</div><div><p className="text-sm font-medium text-foreground">{emp.name}</p><p className="text-xs text-muted-foreground">{emp.department} • {emp.performance?.completedTasks || 0} tasks done</p></div></div></div>))}</div></div>)}
-            <div className="flex gap-2 pt-2"><Button variant="outline" onClick={() => setAssignLeadId(null)} disabled={assignLoading} className="flex-1">Cancel</Button><Button variant="gradient" onClick={handleAssignLead} disabled={!assignEmployeeId || assignLoading} className="flex-1">{assignLoading && <LoadingSpinner className="w-4 h-4 mr-2" />}{assignLoading ? "Assigning..." : "Assign"}</Button></div>
+            <div className="p-3 rounded-lg bg-muted/50">
+              <p className="font-medium text-foreground">{leads.find((l) => l._id === assignLeadId)?.name}</p>
+              <p className="text-sm text-muted-foreground">Currently: {getEmployeeName(leads.find((l) => l._id === assignLeadId)?.assignedTo || '')}</p>
+            </div>
+
+            {employees.length === 0 ? (
+              <div className="text-center text-muted-foreground p-4">
+                <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+                <p className="text-sm">Loading employees...</p>
+              </div>
+            ) : departments.length === 0 ? (
+              <div className="text-center text-destructive p-4 border border-destructive/30 rounded-lg">
+                <p className="text-sm font-medium">No departments found</p>
+                <p className="text-xs mt-1">Please check that employees have department information.</p>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1 block">Step 1: Select Department</label>
+                  <Select value={assignDepartment} onValueChange={(v) => { setAssignDepartment(v); setAssignRole(''); setAssignEmployeeId(''); }}>
+                    <SelectTrigger><SelectValue placeholder="Choose department first" /></SelectTrigger>
+                    <SelectContent>
+                      {departments.map((dept) => <SelectItem key={dept} value={dept}>{dept}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {assignDepartment && (
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-1 block">Step 2: Select Role</label>
+                    <Select value={assignRole} onValueChange={(v) => { setAssignRole(v); setAssignEmployeeId(''); }}>
+                      <SelectTrigger><SelectValue placeholder="Choose role" /></SelectTrigger>
+                      <SelectContent>
+                        {rolesByDepartment(assignDepartment).length > 0 ? (
+                          rolesByDepartment(assignDepartment).map((r) => (
+                            <SelectItem key={r} value={r}>{r} ({employeesByDepartmentAndRole(assignDepartment, r).length} members)</SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="none" disabled>No roles available</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {rolesByDepartment(assignDepartment).length === 0 && (
+                      <p className="text-xs text-warning mt-1">No active employees in this department with a role.</p>
+                    )}
+                  </div>
+                )}
+
+                {assignRole && rolesByDepartment(assignDepartment).length > 0 && (
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-1 block">Step 3: Select {assignRole}</label>
+                    <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-1">
+                      {employeesByDepartmentAndRole(assignDepartment, assignRole).length > 0 ? (
+                        employeesByDepartmentAndRole(assignDepartment, assignRole).map((emp) => (
+                          <div key={emp._id} onClick={() => setAssignEmployeeId(emp._id)} 
+                            className={`p-3 rounded-lg border cursor-pointer transition-all ${assignEmployeeId === emp._id ? 'border-primary bg-primary/5 shadow-sm' : 'border-border hover:border-primary/50'}`}>
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-primary font-semibold text-sm">
+                                {emp.name.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-foreground">{emp.name}</p>
+                                <p className="text-xs text-muted-foreground">{emp.department} • {emp.performance?.completedTasks || 0} tasks done</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-4 text-center text-muted-foreground text-sm">
+                          No active employees found for this role.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" onClick={() => setAssignLeadId(null)} disabled={assignLoading} className="flex-1">Cancel</Button>
+              <Button variant="gradient" onClick={handleAssignLead} disabled={!assignEmployeeId || assignLoading || employees.length === 0} className="flex-1">
+                {assignLoading && <LoadingSpinner className="w-4 h-4 mr-2" />}
+                {assignLoading ? "Assigning..." : "Assign"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

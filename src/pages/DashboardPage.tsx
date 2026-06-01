@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -12,13 +12,11 @@ import {
   Calendar,
   AlertTriangle,
   TrendingUp,
-  CheckCircle,
-  Activity,
-  UserPlus,
   Briefcase,
   Star,
-  AlertCircle,
   Ticket,
+  UserPlus,
+  Activity,
 } from 'lucide-react';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { useToast } from '@/hooks/use-toast';
@@ -38,26 +36,33 @@ import {
   Cell,
 } from 'recharts';
 
-// ===================== TYPES (match actual backend) =====================
+// ===================== TYPES =====================
 interface Employee {
   _id: string;
+  id?: string;
   name: string;
   role: string;
-  status: string;
+  status?: string;
+  branchId?: string;
 }
 
 interface Customer {
   _id: string;
+  id?: string;
   name: string;
+  branchId?: string;
+  assignedTo?: any;
   createdAt?: string;
 }
 
 interface Lead {
   _id: string;
+  id?: string;
   name: string;
   status: string;
   nextFollowUpDate?: string | null;
-  assignedTo?: { $oid: string } | string;
+  assignedTo?: any;
+  branchId?: string;
   createdAt: string;
   updatedAt?: string;
   source?: string;
@@ -65,10 +70,13 @@ interface Lead {
 
 interface Work {
   _id: string;
+  id?: string;
   title: string;
   workType: string;
   status: string;
-  assignedTo?: { $oid: string } | string;
+  assignedTo?: any;
+  branchId?: string;
+  customer?: any;
   priority?: string;
   dueDate?: string;
   createdAt?: string;
@@ -76,16 +84,18 @@ interface Work {
 
 interface Ticket {
   _id: string;
+  id?: string;
   ticketId?: string;
   subject: string;
   status: string;
   priority?: string;
-  assignedTo?: { $oid: string } | string;
+  assignedTo?: any;
+  branchId?: string;
   createdAt?: string;
-  customer?: { $oid: string };
+  customer?: any;
 }
 
-interface Activity {
+interface ActivityItem {
   id: string;
   type: 'lead' | 'work' | 'customer' | 'ticket';
   title: string;
@@ -95,93 +105,184 @@ interface Activity {
 
 interface User {
   _id: string;
-  name: string;
-  role: string;
+  id?: string;
+  name?: string;
+  role?: string;
+  branchId?: string;
 }
+
+type DashboardMode = 'admin' | 'manager' | 'telecaller' | 'employee';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://digitalness-backend.onrender.com/api';
 
-// Helper: extract MongoDB $oid or string ID
-function extractId(obj: any): string | null {
-  if (!obj) return null;
-  if (typeof obj === 'string') return obj;
-  if (obj.$oid) return obj.$oid;
-  if (obj._id) return obj._id;
+// ===================== HELPERS =====================
+function extractId(value: any): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (value.$oid) return value.$oid;
+  if (value._id) return extractId(value._id);
+  if (value.id) return extractId(value.id);
   return null;
 }
 
-function formatRelativeTime(dateString: string): string {
+function normalizeRole(role?: string): string {
+  return String(role || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function getDashboardMode(role?: string): DashboardMode {
+  const normalizedRole = normalizeRole(role);
+
+  if (normalizedRole === 'admin') return 'admin';
+
+  if (
+    normalizedRole === 'operational manager' ||
+    normalizedRole === 'operation manager' ||
+    normalizedRole === 'operations manager'
+  ) {
+    return 'manager';
+  }
+
+  if (normalizedRole === 'telecaller' || normalizedRole === 'tele caller') {
+    return 'telecaller';
+  }
+
+  return 'employee';
+}
+
+function isAssignedToUser(assignedTo: any, userId?: string): boolean {
+  if (!userId || !assignedTo) return false;
+
+  if (Array.isArray(assignedTo)) {
+    return assignedTo.some((item) => extractId(item) === userId);
+  }
+
+  return extractId(assignedTo) === userId;
+}
+
+function getEntityBranchId(entity: any, customerBranchMap?: Record<string, string>): string | undefined {
+  if (!entity) return undefined;
+
+  const directBranch =
+    entity.branchId ||
+    entity.branch ||
+    entity?.branchId?._id ||
+    entity?.branch?._id ||
+    entity?.branchId?.$oid ||
+    entity?.branch?.$oid;
+
+  if (directBranch) return String(directBranch);
+
+  const customerId = extractId(entity.customer);
+  if (customerId && customerBranchMap?.[customerId]) {
+    return customerBranchMap[customerId];
+  }
+
+  return undefined;
+}
+
+function belongsToBranch(entity: any, branchId?: string, customerBranchMap?: Record<string, string>): boolean {
+  if (!branchId) return true; // If manager has no branchId in localStorage, do not break the dashboard.
+  const entityBranchId = getEntityBranchId(entity, customerBranchMap);
+  return entityBranchId === branchId;
+}
+
+function formatRelativeTime(dateString?: string): string {
+  if (!dateString) return 'N/A';
+
   const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return 'N/A';
+
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
+
   if (diffMins < 1) return 'Just now';
   if (diffMins < 60) return `${diffMins} min ago`;
   if (diffHours < 24) return `${diffHours} hr ago`;
   if (diffDays < 7) return `${diffDays} day ago`;
-  return date.toLocaleDateString();
+
+  return date.toLocaleDateString('en-IN');
 }
 
-// ============= IMPROVED FETCHER: handles common API response shapes =============
 async function fetcher<T>(endpoint: string, token: string): Promise<T> {
   const res = await fetch(`${API_URL}/${endpoint}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
     throw new Error(error.message || `HTTP ${res.status}`);
   }
+
   const json = await res.json();
 
-  // Try to extract the actual data array from various common wrappers
-  // Support: direct array, { data: [...] }, { data: { items: [...] } }, { customers: [...] }, etc.
   if (Array.isArray(json)) return json as T;
-  if (json.data && Array.isArray(json.data)) return json.data as T;
-  if (json.data && json.data.items && Array.isArray(json.data.items)) return json.data.items as T;
-  if (json.data && json.data.docs && Array.isArray(json.data.docs)) return json.data.docs as T;
-  // For named collections: e.g., { customers: [...] }
+  if (Array.isArray(json.data)) return json.data as T;
+  if (Array.isArray(json?.data?.items)) return json.data.items as T;
+  if (Array.isArray(json?.data?.docs)) return json.data.docs as T;
+
   const possibleKeys = ['customers', 'leads', 'works', 'tickets', 'users', 'items', 'results', 'result'];
   for (const key of possibleKeys) {
-    if (json[key] && Array.isArray(json[key])) return json[key] as T;
-    if (json.data && json.data[key] && Array.isArray(json.data[key])) return json.data[key] as T;
+    if (Array.isArray(json[key])) return json[key] as T;
+    if (Array.isArray(json?.data?.[key])) return json.data[key] as T;
   }
-  // Fallback: return the whole json (might be an object, caller must handle)
+
   console.warn(`Unexpected response shape for ${endpoint}:`, json);
-  return json as T;
+  return [] as T;
 }
 
+// ===================== DASHBOARD =====================
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
+
   const token = localStorage.getItem('token');
   const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+
   const currentUser: User = {
     _id: storedUser._id || storedUser.id,
+    id: storedUser.id || storedUser._id,
     name: storedUser.name,
     role: storedUser.role,
+    branchId: storedUser.branchId || storedUser.branch,
   };
 
-  // Role detection - case insensitive, support variations
-  const adminRoles = ['admin', 'operational manager', 'operation manager'];
-  const isAdminOrManager = adminRoles.includes(currentUser.role?.toLowerCase());
-  const isEmployee = !isAdminOrManager;
+  const userId = currentUser._id || currentUser.id || '';
+  const mode = getDashboardMode(currentUser.role);
+  const isAdmin = mode === 'admin';
+  const isManager = mode === 'manager';
+  const isTelecaller = mode === 'telecaller';
+  const isNormalEmployee = mode === 'employee';
 
-  // State
+  const canViewAllCompanyData = isAdmin;
+  const canViewBranchData = isManager;
+  const canViewLeads = isAdmin || isManager || isTelecaller;
+  const canViewCustomers = isAdmin || isManager;
+  const canViewEmployees = isAdmin || isManager;
+  const canViewTickets = isAdmin || isManager || isTelecaller;
+  const canViewProjectStats = isAdmin || isManager;
+  const dashboardTitle =
+    isAdmin
+      ? 'Company-wide insights'
+      : isManager
+        ? 'Branch insights'
+        : isTelecaller
+          ? 'Your leads, follow-ups and assigned tasks'
+          : 'Your assigned work and recent updates';
+
   const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [works, setWorks] = useState<Work[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [activities, setActivities] = useState<Activity[]>([]);
-
-  const isAssignedToCurrentUser = (assignedTo: any): boolean => {
-    if (!isEmployee) return true;
-    const assignedId = extractId(assignedTo);
-    return assignedId === currentUser._id;
-  };
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
 
   useEffect(() => {
     if (!token) {
@@ -192,30 +293,53 @@ export default function DashboardPage() {
 
     const fetchAll = async () => {
       setLoading(true);
+
       try {
-        // Parallel fetch with improved error handling
         const [usersData, customersData, leadsData, worksData, ticketsData] = await Promise.all([
-          fetcher<any>('users', token).catch(() => []),
-          fetcher<any>('customers', token).catch(() => []),
-          fetcher<any>('leads', token).catch(() => []),
-          fetcher<any>('works', token).catch(() => []),
-          fetcher<any>('tickets', token).catch(() => []),
+          fetcher<Employee[]>('users', token).catch(() => []),
+          fetcher<Customer[]>('customers', token).catch(() => []),
+          fetcher<Lead[]>('leads', token).catch(() => []),
+          fetcher<Work[]>('works', token).catch(() => []),
+          fetcher<Ticket[]>('tickets', token).catch(() => []),
         ]);
 
-        // Ensure arrays (fetcher already attempts to return array, but double-check)
         let employeesList = Array.isArray(usersData) ? usersData : [];
         let customersList = Array.isArray(customersData) ? customersData : [];
         let leadsList = Array.isArray(leadsData) ? leadsData : [];
         let worksList = Array.isArray(worksData) ? worksData : [];
         let ticketsList = Array.isArray(ticketsData) ? ticketsData : [];
 
-        // Role-based filtering
-        if (isEmployee) {
-          leadsList = leadsList.filter((l: Lead) => isAssignedToCurrentUser(l.assignedTo));
-          worksList = worksList.filter((w: Work) => isAssignedToCurrentUser(w.assignedTo));
-          ticketsList = ticketsList.filter((t: Ticket) => isAssignedToCurrentUser(t.assignedTo));
-          employeesList = employeesList.filter((e: Employee) => e._id === currentUser._id);
-          customersList = []; // Employees should not see customer list
+        const customerBranchMap = customersList.reduce<Record<string, string>>((acc, customer) => {
+          const customerId = extractId(customer);
+          const customerBranchId = getEntityBranchId(customer);
+          if (customerId && customerBranchId) acc[customerId] = customerBranchId;
+          return acc;
+        }, {});
+
+        // ===================== ROLE-BASED DATA ACCESS =====================
+        if (canViewAllCompanyData) {
+          // Admin sees everything.
+        } else if (canViewBranchData) {
+          // Operational Manager sees only own branch data.
+          employeesList = employeesList.filter((employee) => employee.branchId === currentUser.branchId);
+          customersList = customersList.filter((customer) => belongsToBranch(customer, currentUser.branchId));
+          leadsList = leadsList.filter((lead) => belongsToBranch(lead, currentUser.branchId));
+          worksList = worksList.filter((work) => belongsToBranch(work, currentUser.branchId, customerBranchMap));
+          ticketsList = ticketsList.filter((ticket) => belongsToBranch(ticket, currentUser.branchId, customerBranchMap));
+        } else if (isTelecaller) {
+          // Telecaller sees only assigned leads and assigned works/tasks.
+          employeesList = employeesList.filter((employee) => extractId(employee) === userId);
+          customersList = [];
+          leadsList = leadsList.filter((lead) => isAssignedToUser(lead.assignedTo, userId));
+          worksList = worksList.filter((work) => isAssignedToUser(work.assignedTo, userId));
+          ticketsList = ticketsList.filter((ticket) => isAssignedToUser(ticket.assignedTo, userId));
+        } else {
+          // Other employees see only assigned works and their work-related recent activity.
+          employeesList = employeesList.filter((employee) => extractId(employee) === userId);
+          customersList = [];
+          leadsList = [];
+          worksList = worksList.filter((work) => isAssignedToUser(work.assignedTo, userId));
+          ticketsList = ticketsList.filter((ticket) => isAssignedToUser(ticket.assignedTo, userId));
         }
 
         setEmployees(employeesList);
@@ -224,22 +348,64 @@ export default function DashboardPage() {
         setWorks(worksList);
         setTickets(ticketsList);
 
-        // Build activities from all sources (only if timestamp exists)
-        const acts: Activity[] = [];
-        leadsList.forEach((l: Lead) => {
-          if (l.createdAt) acts.push({ id: `lead-${l._id}`, type: 'lead', title: 'New Lead', description: l.name, timestamp: l.createdAt });
+        const allowedActivities: ActivityItem[] = [];
+
+        if (canViewLeads) {
+          leadsList.forEach((lead) => {
+            if (lead.createdAt) {
+              allowedActivities.push({
+                id: `lead-${lead._id}`,
+                type: 'lead',
+                title: 'Lead Update',
+                description: lead.name,
+                timestamp: lead.createdAt,
+              });
+            }
+          });
+        }
+
+        worksList.forEach((work) => {
+          if (work.createdAt) {
+            allowedActivities.push({
+              id: `work-${work._id}`,
+              type: 'work',
+              title: 'Work Update',
+              description: work.title,
+              timestamp: work.createdAt,
+            });
+          }
         });
-        worksList.forEach((w: Work) => {
-          if (w.createdAt) acts.push({ id: `work-${w._id}`, type: 'work', title: 'New Work', description: w.title, timestamp: w.createdAt });
-        });
-        customersList.forEach((c: Customer) => {
-          if (c.createdAt) acts.push({ id: `cust-${c._id}`, type: 'customer', title: 'New Customer', description: c.name, timestamp: c.createdAt });
-        });
-        ticketsList.forEach((t: Ticket) => {
-          if (t.createdAt) acts.push({ id: `ticket-${t._id}`, type: 'ticket', title: 'New Ticket', description: t.subject, timestamp: t.createdAt });
-        });
-        acts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        setActivities(acts.slice(0, 10));
+
+        if (canViewCustomers) {
+          customersList.forEach((customer) => {
+            if (customer.createdAt) {
+              allowedActivities.push({
+                id: `customer-${customer._id}`,
+                type: 'customer',
+                title: 'Customer Update',
+                description: customer.name,
+                timestamp: customer.createdAt,
+              });
+            }
+          });
+        }
+
+        if (canViewTickets) {
+          ticketsList.forEach((ticket) => {
+            if (ticket.createdAt) {
+              allowedActivities.push({
+                id: `ticket-${ticket._id}`,
+                type: 'ticket',
+                title: 'Ticket Update',
+                description: ticket.subject,
+                timestamp: ticket.createdAt,
+              });
+            }
+          });
+        }
+
+        allowedActivities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setActivities(allowedActivities.slice(0, 10));
       } catch (err) {
         console.error('Dashboard fetch error:', err);
         toast({ title: 'Error', description: 'Failed to load dashboard data', variant: 'destructive' });
@@ -247,95 +413,203 @@ export default function DashboardPage() {
         setLoading(false);
       }
     };
+
     fetchAll();
-  }, [token, toast, isEmployee, currentUser._id]);
+  }, [
+    token,
+    toast,
+    userId,
+    currentUser.branchId,
+    canViewAllCompanyData,
+    canViewBranchData,
+    isTelecaller,
+    canViewLeads,
+    canViewCustomers,
+    canViewTickets,
+  ]);
 
-  // ===================== STATS =====================
+  // ===================== DERIVED DATA =====================
   const today = new Date().toISOString().split('T')[0];
-  const todayFollowups = leads.filter(l => l.nextFollowUpDate && l.nextFollowUpDate.split('T')[0] === today).length;
-  const completedWorks = works.filter(w => w.status === 'Completed').length;
-  const pendingWorks = works.filter(w => w.status !== 'Completed').length;
-  const openTickets = tickets.filter(t => t.status !== 'Closed' && t.status !== 'Resolved').length;
-  const highPriorityTickets = tickets.filter(t => t.priority === 'High' || t.priority === 'Urgent').length;
 
-  // Lead status pie
-  const leadStatusMap: Record<string, number> = {};
-  leads.forEach(l => { leadStatusMap[l.status] = (leadStatusMap[l.status] || 0) + 1; });
-  const leadStatusData = Object.entries(leadStatusMap).map(([name, value]) => ({ name, value }));
+  const todayFollowups = leads.filter(
+    (lead) => lead.nextFollowUpDate && lead.nextFollowUpDate.split('T')[0] === today
+  ).length;
 
-  // Work status bar
-  const workStatusMap: Record<string, number> = {};
-  works.forEach(w => { workStatusMap[w.status] = (workStatusMap[w.status] || 0) + 1; });
-  const workStatusData = Object.entries(workStatusMap).map(([name, value]) => ({ name, value }));
+  const completedWorks = works.filter((work) => work.status === 'Completed').length;
+  const pendingWorks = works.filter((work) => work.status !== 'Completed').length;
+  const openTickets = tickets.filter((ticket) => ticket.status !== 'Closed' && ticket.status !== 'Resolved').length;
+  const highPriorityTickets = tickets.filter((ticket) => ticket.priority === 'High' || ticket.priority === 'Urgent').length;
 
-  // Ticket priority bar
-  const ticketPriorityMap: Record<string, number> = {};
-  tickets.forEach(t => { const p = t.priority || 'Medium'; ticketPriorityMap[p] = (ticketPriorityMap[p] || 0) + 1; });
-  const ticketPriorityData = Object.entries(ticketPriorityMap).map(([name, value]) => ({ name, value }));
+  const leadStatusData = useMemo(() => {
+    const map: Record<string, number> = {};
+    leads.forEach((lead) => {
+      map[lead.status || 'Unknown'] = (map[lead.status || 'Unknown'] || 0) + 1;
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [leads]);
 
-  // Project types from completed works
-  const completedWorksList = works.filter(w => w.status === 'Completed');
-  const digitalMarketing = completedWorksList.filter(w => w.workType === 'Digital Marketing').length;
-  const appDev = completedWorksList.filter(w => w.workType === 'App Development').length;
-  const promoVideos = completedWorksList.filter(w => w.workType === 'Video Production').length;
-  const webDesign = completedWorksList.filter(w => w.workType === 'Website Design').length;
+  const workStatusData = useMemo(() => {
+    const map: Record<string, number> = {};
+    works.forEach((work) => {
+      map[work.status || 'Unknown'] = (map[work.status || 'Unknown'] || 0) + 1;
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [works]);
+
+  const ticketPriorityData = useMemo(() => {
+    const map: Record<string, number> = {};
+    tickets.forEach((ticket) => {
+      const priority = ticket.priority || 'Medium';
+      map[priority] = (map[priority] || 0) + 1;
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [tickets]);
+
+  const completedWorksList = works.filter((work) => work.status === 'Completed');
   const projectStats = [
-    { title: 'Digital Marketing', value: digitalMarketing, icon: TrendingUp },
-    { title: 'Apps Developed', value: appDev, icon: MonitorSmartphone },
-    { title: 'Promo Videos', value: promoVideos, icon: Video },
-    { title: 'Website Designs', value: webDesign, icon: Globe },
+    {
+      title: 'Digital Marketing',
+      value: completedWorksList.filter((work) => work.workType === 'Digital Marketing').length,
+      icon: TrendingUp,
+    },
+    {
+      title: 'Apps Developed',
+      value: completedWorksList.filter((work) => work.workType === 'App Development').length,
+      icon: MonitorSmartphone,
+    },
+    {
+      title: 'Promo Videos',
+      value: completedWorksList.filter((work) => work.workType === 'Video Production').length,
+      icon: Video,
+    },
+    {
+      title: 'Website Designs',
+      value: completedWorksList.filter((work) => work.workType === 'Website Design').length,
+      icon: Globe,
+    },
   ];
 
-  // Top employees (admin only)
-  let topEmployees: { name: string; completed: number; total: number }[] = [];
-  if (isAdminOrManager && employees.length > 0) {
-    const empMap: Record<string, { name: string; completed: number; total: number }> = {};
-    works.forEach(w => {
-      const assigneeId = extractId(w.assignedTo);
-      if (assigneeId) {
-        const emp = employees.find(e => e._id === assigneeId);
-        const name = emp?.name || 'Unknown';
-        if (!empMap[assigneeId]) empMap[assigneeId] = { name, completed: 0, total: 0 };
-        empMap[assigneeId].total++;
-        if (w.status === 'Completed') empMap[assigneeId].completed++;
-      }
+  const topEmployees = useMemo(() => {
+    if (!canViewEmployees || employees.length === 0) return [];
+
+    const employeeMap: Record<string, { name: string; completed: number; total: number }> = {};
+
+    works.forEach((work) => {
+      const assigneeIds = Array.isArray(work.assignedTo)
+        ? work.assignedTo.map((item) => extractId(item)).filter(Boolean)
+        : [extractId(work.assignedTo)].filter(Boolean);
+
+      assigneeIds.forEach((assigneeId) => {
+        const employee = employees.find((item) => extractId(item) === assigneeId);
+        const name = employee?.name || 'Unknown';
+
+        if (!employeeMap[assigneeId as string]) {
+          employeeMap[assigneeId as string] = { name, completed: 0, total: 0 };
+        }
+
+        employeeMap[assigneeId as string].total += 1;
+
+        if (work.status === 'Completed') {
+          employeeMap[assigneeId as string].completed += 1;
+        }
+      });
     });
-    topEmployees = Object.values(empMap).sort((a, b) => b.completed - a.completed).slice(0, 5);
+
+    return Object.values(employeeMap)
+      .sort((a, b) => b.completed - a.completed)
+      .slice(0, 5);
+  }, [canViewEmployees, employees, works]);
+
+  const recentLeads = [...leads]
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .slice(0, 5);
+
+  const recentTickets = [...tickets]
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .slice(0, 5);
+
+  const urgentWorks = works
+    .filter((work) => work.status !== 'Completed' && (work.priority === 'High' || work.priority === 'Urgent'))
+    .slice(0, 5);
+
+  const statsCards: any[] = [];
+
+  if (canViewCustomers) {
+    statsCards.push({
+      title: isManager ? 'Branch Customers' : 'Total Customers',
+      value: customers.length,
+      icon: Building2,
+      variant: 'default',
+      onClick: () => navigate('/customers'),
+    });
   }
 
-  const recentLeads = [...leads].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
-  const recentTickets = [...tickets].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).slice(0, 5);
-  const urgentWorks = works.filter(w => w.status !== 'Completed' && (w.priority === 'High' || w.priority === 'Urgent')).slice(0, 5);
-
-  // Stats cards - conditionally include customer/employee for admins
-  const statsCards = [];
-  if (isAdminOrManager) {
-    statsCards.push(
-      { title: 'Total Customers', value: customers.length, icon: Building2, variant: 'default', onClick: () => navigate('/customers'), trend: { value: 12, isPositive: true } },
-      { title: 'Total Employees', value: employees.length, icon: Users, variant: 'default', onClick: () => navigate('/employees') }
-    );
+  if (canViewEmployees) {
+    statsCards.push({
+      title: isManager ? 'Branch Employees' : 'Total Employees',
+      value: employees.length,
+      icon: Users,
+      variant: 'default',
+      onClick: () => navigate('/employees'),
+    });
   }
-  statsCards.push(
-    { title: 'Total Leads', value: leads.length, icon: Target, variant: 'default', onClick: () => navigate('/leads'), ...(isAdminOrManager && { trend: { value: 8, isPositive: true } }) },
-    { title: 'Pending Works', value: pendingWorks, icon: Briefcase, variant: 'default', onClick: () => navigate('/works') },
-    { title: 'Open Tickets', value: openTickets, icon: Ticket, variant: openTickets > 0 ? 'warning' : 'default', onClick: () => navigate('/tickets') },
-    { title: "Today's Follow-ups", value: todayFollowups, icon: Phone, variant: todayFollowups > 0 ? 'warning' : 'default', onClick: () => navigate('/leads') }
-  );
+
+  if (canViewLeads) {
+    statsCards.push({
+      title: isTelecaller ? 'My Leads' : isManager ? 'Branch Leads' : 'Total Leads',
+      value: leads.length,
+      icon: Target,
+      variant: 'default',
+      onClick: () => navigate('/leads'),
+    });
+  }
+
+  statsCards.push({
+    title: isAdmin || isManager ? 'Pending Works' : 'My Pending Works',
+    value: pendingWorks,
+    icon: Briefcase,
+    variant: pendingWorks > 0 ? 'warning' : 'default',
+    onClick: () => navigate('/works'),
+  });
+
+  if (canViewTickets) {
+    statsCards.push({
+      title: isTelecaller ? 'My Open Tickets' : 'Open Tickets',
+      value: openTickets,
+      icon: Ticket,
+      variant: openTickets > 0 ? 'warning' : 'default',
+      onClick: () => navigate('/tickets'),
+    });
+  }
+
+  if (canViewLeads) {
+    statsCards.push({
+      title: "Today's Follow-ups",
+      value: todayFollowups,
+      icon: Phone,
+      variant: todayFollowups > 0 ? 'warning' : 'default',
+      onClick: () => navigate('/leads'),
+    });
+  }
 
   const COLORS = ['#00C49F', '#0088FE', '#FFBB28', '#FF8042', '#A855F7', '#EF4444'];
-  const getStatusColor = (status: string) => {
+
+  const getStatusColor = (status?: string) => {
     const map: Record<string, string> = {
-      'Completed': 'bg-green-100 text-green-800',
+      Completed: 'bg-green-100 text-green-800',
       'In Progress': 'bg-blue-100 text-blue-800',
-      'Pending': 'bg-yellow-100 text-yellow-800',
-      'Open': 'bg-blue-100 text-blue-800',
-      'Closed': 'bg-gray-100 text-gray-800',
-      'Resolved': 'bg-green-100 text-green-800',
-      'Won': 'bg-green-100 text-green-800',
+      Pending: 'bg-yellow-100 text-yellow-800',
+      Open: 'bg-blue-100 text-blue-800',
+      Closed: 'bg-gray-100 text-gray-800',
+      Resolved: 'bg-green-100 text-green-800',
+      Won: 'bg-green-100 text-green-800',
       'Own Close': 'bg-green-100 text-green-800',
-      'Lost': 'bg-red-100 text-red-800',
+      Lost: 'bg-red-100 text-red-800',
+      Failed: 'bg-red-100 text-red-800',
+      Review: 'bg-purple-100 text-purple-800',
     };
-    return map[status] || 'bg-gray-100 text-gray-800';
+
+    return map[status || ''] || 'bg-gray-100 text-gray-800';
   };
 
   if (loading) {
@@ -352,46 +626,67 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+      >
         <div>
-          <h1 className="text-2xl font-bold">Dashboard Overview {!isAdminOrManager && `(${currentUser.role})`}</h1>
-          <p className="text-muted-foreground">{isAdminOrManager ? 'Company-wide insights' : 'Your personal workspace'}</p>
+          <h1 className="text-2xl font-bold">
+            Dashboard Overview {currentUser.role ? `(${currentUser.role})` : ''}
+          </h1>
+          <p className="text-muted-foreground">{dashboardTitle}</p>
         </div>
+
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Calendar className="w-4 h-4" />
-          {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          {new Date().toLocaleDateString('en-IN', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          })}
         </div>
       </motion.div>
 
-      {/* Stats grid - dynamic columns based on card count */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-${Math.min(statsCards.length, 4)} gap-4`}>
-        {statsCards.map((stat, i) => (
-          <StatCard key={stat.title} {...stat} delay={i} />
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {statsCards.map((stat, index) => (
+          <StatCard key={stat.title} {...stat} delay={index} />
         ))}
       </div>
 
-      {/* Charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Charts */}
+      <div className={`grid grid-cols-1 ${canViewLeads ? 'lg:grid-cols-2' : 'lg:grid-cols-1'} gap-6`}>
+        {canViewLeads && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Lead Status Distribution</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {leadStatusData.length ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie data={leadStatusData} dataKey="value" nameKey="name" outerRadius={80} label>
+                      {leadStatusData.map((_, index) => (
+                        <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-64 flex items-center justify-center text-muted-foreground">No lead data</div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
-          <CardHeader><CardTitle>Lead Status Distribution</CardTitle></CardHeader>
-          <CardContent>
-            {leadStatusData.length ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie data={leadStatusData} dataKey="value" nameKey="name" outerRadius={80} label>
-                    {leadStatusData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-64 flex items-center justify-center text-muted-foreground">No lead data</div>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle>Work Status Overview</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>{isNormalEmployee ? 'My Work Status Overview' : 'Work Status Overview'}</CardTitle>
+          </CardHeader>
           <CardContent>
             {workStatusData.length ? (
               <ResponsiveContainer width="100%" height={300}>
@@ -410,10 +705,12 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Ticket Priority Chart (if data exists) */}
-      {ticketPriorityData.length > 0 && (
+      {/* Ticket Priority */}
+      {canViewTickets && ticketPriorityData.length > 0 && (
         <Card>
-          <CardHeader><CardTitle>Ticket Priority Distribution</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Ticket Priority Distribution</CardTitle>
+          </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={ticketPriorityData}>
@@ -428,15 +725,19 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* Completed Projects by Type (Admin only) */}
-      {isAdminOrManager && (
+      {/* Completed Projects by Type */}
+      {canViewProjectStats && (
         <Card>
-          <CardHeader><CardTitle>Completed Projects by Type</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>{isManager ? 'Branch Completed Projects by Type' : 'Completed Projects by Type'}</CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {projectStats.map(stat => (
+              {projectStats.map((stat) => (
                 <div key={stat.title} className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
-                  <div className="p-2 rounded-lg bg-primary/10 text-primary"><stat.icon className="w-5 h-5" /></div>
+                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                    <stat.icon className="w-5 h-5" />
+                  </div>
                   <div>
                     <p className="text-2xl font-bold">{stat.value}</p>
                     <p className="text-xs text-muted-foreground">{stat.title}</p>
@@ -448,24 +749,31 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* Three column info row */}
+      {/* Info Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Top Employees (Admin only) */}
-        {isAdminOrManager && (
+        {canViewEmployees && (
           <Card>
-            <CardHeader><CardTitle className="flex gap-2"><Star className="text-yellow-500" /> Top Employees</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="flex gap-2">
+                <Star className="text-yellow-500" /> Top Employees
+              </CardTitle>
+            </CardHeader>
             <CardContent>
               {topEmployees.length ? (
-                topEmployees.map((e, i) => (
-                  <div key={i} className="flex justify-between items-center p-2 rounded-lg bg-muted/30 mb-2">
+                topEmployees.map((employee, index) => (
+                  <div key={index} className="flex justify-between items-center p-2 rounded-lg bg-muted/30 mb-2">
                     <div className="flex gap-2 items-center">
-                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold">{e.name.charAt(0)}</div>
+                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold">
+                        {employee.name.charAt(0)}
+                      </div>
                       <div>
-                        <p className="text-sm font-medium">{e.name}</p>
-                        <p className="text-xs">Completed: {e.completed}/{e.total}</p>
+                        <p className="text-sm font-medium">{employee.name}</p>
+                        <p className="text-xs">Completed: {employee.completed}/{employee.total}</p>
                       </div>
                     </div>
-                    <Badge variant="outline">{Math.round((e.completed / e.total) * 100)}%</Badge>
+                    <Badge variant="outline">
+                      {employee.total ? Math.round((employee.completed / employee.total) * 100) : 0}%
+                    </Badge>
                   </div>
                 ))
               ) : (
@@ -475,63 +783,108 @@ export default function DashboardPage() {
           </Card>
         )}
 
-        {/* Recent Leads */}
-        <Card>
-          <CardHeader><CardTitle className="flex gap-2"><Target className="text-blue-500" /> Recent Leads</CardTitle></CardHeader>
-          <CardContent>
-            {recentLeads.length ? (
-              recentLeads.map(lead => (
-                <div key={lead._id} className="flex justify-between items-center p-2 rounded-lg bg-muted/30 mb-2">
-                  <div>
-                    <p className="text-sm font-medium">{lead.name}</p>
-                    <p className="text-xs text-muted-foreground">{formatRelativeTime(lead.createdAt)}</p>
+        {canViewLeads && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex gap-2">
+                <Target className="text-blue-500" /> {isTelecaller ? 'My Recent Leads' : 'Recent Leads'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {recentLeads.length ? (
+                recentLeads.map((lead) => (
+                  <div key={lead._id} className="flex justify-between items-center p-2 rounded-lg bg-muted/30 mb-2">
+                    <div>
+                      <p className="text-sm font-medium">{lead.name}</p>
+                      <p className="text-xs text-muted-foreground">{formatRelativeTime(lead.createdAt)}</p>
+                    </div>
+                    <Badge className={getStatusColor(lead.status)}>{lead.status}</Badge>
                   </div>
-                  <Badge className={getStatusColor(lead.status)}>{lead.status}</Badge>
+                ))
+              ) : (
+                <p className="text-center py-6 text-muted-foreground">No leads</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex gap-2">
+              <Briefcase className="text-green-500" /> {isNormalEmployee ? 'My Urgent Works' : 'Urgent Works'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {urgentWorks.length ? (
+              urgentWorks.map((work) => (
+                <div key={work._id} className="flex justify-between items-center p-2 rounded-lg bg-muted/30 mb-2">
+                  <div>
+                    <p className="text-sm font-medium">{work.title}</p>
+                    <p className="text-xs text-muted-foreground">{work.dueDate ? new Date(work.dueDate).toLocaleDateString('en-IN') : 'No due date'}</p>
+                  </div>
+                  <Badge className={getStatusColor(work.status)}>{work.priority || work.status}</Badge>
                 </div>
               ))
             ) : (
-              <p className="text-center py-6 text-muted-foreground">No leads</p>
+              <p className="text-center py-6 text-muted-foreground">No urgent works</p>
             )}
           </CardContent>
         </Card>
 
-        {/* Recent Tickets */}
-        <Card>
-          <CardHeader><CardTitle className="flex gap-2"><Ticket className="text-purple-500" /> Recent Tickets</CardTitle></CardHeader>
-          <CardContent>
-            {recentTickets.length ? (
-              recentTickets.map(ticket => (
-                <div key={ticket._id} className="flex justify-between items-center p-2 rounded-lg bg-muted/30 mb-2">
-                  <div>
-                    <p className="text-sm font-medium">{ticket.subject}</p>
-                    <p className="text-xs text-muted-foreground">{ticket.createdAt ? formatRelativeTime(ticket.createdAt) : 'N/A'}</p>
+        {canViewTickets && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex gap-2">
+                <Ticket className="text-purple-500" /> {isTelecaller ? 'My Recent Tickets' : 'Recent Tickets'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {recentTickets.length ? (
+                recentTickets.map((ticket) => (
+                  <div key={ticket._id} className="flex justify-between items-center p-2 rounded-lg bg-muted/30 mb-2">
+                    <div>
+                      <p className="text-sm font-medium">{ticket.subject}</p>
+                      <p className="text-xs text-muted-foreground">{formatRelativeTime(ticket.createdAt)}</p>
+                    </div>
+                    <Badge className={getStatusColor(ticket.status)}>{ticket.status}</Badge>
                   </div>
-                  <Badge className={getStatusColor(ticket.status)}>{ticket.status}</Badge>
-                </div>
-              ))
-            ) : (
-              <p className="text-center py-6 text-muted-foreground">No tickets</p>
-            )}
-          </CardContent>
-        </Card>
+                ))
+              ) : (
+                <p className="text-center py-6 text-muted-foreground">No tickets</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
-      {/* Two column bottom: Recent Activities + Alerts */}
+      {/* Recent Activities + Alerts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle className="flex gap-2"><Activity /> Recent Activities</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="flex gap-2">
+              <Activity /> Recent Activities
+            </CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="space-y-4">
               {activities.length ? (
-                activities.map(act => (
-                  <div key={act.id} className="flex items-start gap-3 pb-3 border-b">
+                activities.map((activity) => (
+                  <div key={activity.id} className="flex items-start gap-3 pb-3 border-b">
                     <div className="mt-1 p-1 rounded-full bg-blue-100 text-blue-600">
-                      {act.type === 'lead' ? <Target className="w-3 h-3" /> : act.type === 'work' ? <Briefcase className="w-3 h-3" /> : act.type === 'ticket' ? <Ticket className="w-3 h-3" /> : <UserPlus className="w-3 h-3" />}
+                      {activity.type === 'lead' ? (
+                        <Target className="w-3 h-3" />
+                      ) : activity.type === 'work' ? (
+                        <Briefcase className="w-3 h-3" />
+                      ) : activity.type === 'ticket' ? (
+                        <Ticket className="w-3 h-3" />
+                      ) : (
+                        <UserPlus className="w-3 h-3" />
+                      )}
                     </div>
                     <div>
-                      <p className="text-sm font-medium">{act.title}</p>
-                      <p className="text-xs text-muted-foreground">{act.description}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{formatRelativeTime(act.timestamp)}</p>
+                      <p className="text-sm font-medium">{activity.title}</p>
+                      <p className="text-xs text-muted-foreground">{activity.description}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{formatRelativeTime(activity.timestamp)}</p>
                     </div>
                   </div>
                 ))
@@ -543,51 +896,78 @@ export default function DashboardPage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="flex gap-2"><AlertTriangle className="text-warning" /> Alerts & Follow‑ups</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="flex gap-2">
+              <AlertTriangle className="text-warning" /> Alerts & Follow-ups
+            </CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {/* Upcoming follow-ups */}
-              {(() => {
-                const next7 = new Date(); next7.setDate(next7.getDate() + 7);
-                const upcoming = leads.filter(l => l.nextFollowUpDate && l.nextFollowUpDate >= today && l.nextFollowUpDate <= next7.toISOString().split('T')[0] && l.status !== 'Closed');
-                return (
-                  <div className="p-3 rounded-lg bg-info/10 border border-info/30">
-                    <p className="text-sm font-medium">Upcoming Follow-ups</p>
-                    <p className="text-xs">{upcoming.length} leads in next 7 days</p>
-                    {upcoming.slice(0, 2).map(l => (
-                      <div key={l._id} className="text-xs mt-1">• {l.name} - {new Date(l.nextFollowUpDate!).toLocaleDateString()}</div>
-                    ))}
-                  </div>
-                );
-              })()}
-              {/* Overdue follow-ups */}
-              {(() => {
-                const overdue = leads.filter(l => l.nextFollowUpDate && l.nextFollowUpDate < today && l.status !== 'Closed');
-                return (
-                  <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
-                    <p className="text-sm font-medium">Overdue Follow-ups</p>
-                    <p className="text-xs">{overdue.length} leads past due</p>
-                  </div>
-                );
-              })()}
-              {/* High priority tickets */}
-              {highPriorityTickets > 0 && (
+              {canViewLeads && (
+                <>
+                  {(() => {
+                    const next7 = new Date();
+                    next7.setDate(next7.getDate() + 7);
+                    const upcoming = leads.filter(
+                      (lead) =>
+                        lead.nextFollowUpDate &&
+                        lead.nextFollowUpDate >= today &&
+                        lead.nextFollowUpDate <= next7.toISOString().split('T')[0] &&
+                        lead.status !== 'Closed'
+                    );
+
+                    return (
+                      <div className="p-3 rounded-lg bg-info/10 border border-info/30">
+                        <p className="text-sm font-medium">Upcoming Follow-ups</p>
+                        <p className="text-xs">{upcoming.length} leads in next 7 days</p>
+                        {upcoming.slice(0, 2).map((lead) => (
+                          <div key={lead._id} className="text-xs mt-1">
+                            • {lead.name} - {new Date(lead.nextFollowUpDate!).toLocaleDateString('en-IN')}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {(() => {
+                    const overdue = leads.filter(
+                      (lead) => lead.nextFollowUpDate && lead.nextFollowUpDate < today && lead.status !== 'Closed'
+                    );
+
+                    return (
+                      <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
+                        <p className="text-sm font-medium">Overdue Follow-ups</p>
+                        <p className="text-xs">{overdue.length} leads past due</p>
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
+
+              {canViewTickets && highPriorityTickets > 0 && (
                 <div className="p-3 rounded-lg bg-red-50 border border-red-200">
                   <p className="text-sm font-medium">High Priority Tickets</p>
                   <p className="text-xs">{highPriorityTickets} tickets need attention</p>
                 </div>
               )}
-              {/* Inactive employees (admin only) */}
-              {isAdminOrManager && (
+
+              {canViewEmployees && (
                 <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
                   <p className="text-sm font-medium">Inactive Employees</p>
-                  <p className="text-xs">{employees.filter(e => e.status === 'inactive').length} inactive</p>
+                  <p className="text-xs">
+                    {employees.filter((employee) => normalizeRole(employee.status) === 'inactive').length} inactive
+                  </p>
                 </div>
               )}
-              {/* Pending works */}
+
               <div className="p-3 rounded-lg bg-muted/50 border">
-                <p className="text-sm font-medium">Pending Works</p>
+                <p className="text-sm font-medium">{isNormalEmployee ? 'My Pending Works' : 'Pending Works'}</p>
                 <p className="text-xs">{pendingWorks} works not completed</p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-green-50 border border-green-200">
+                <p className="text-sm font-medium">{isNormalEmployee ? 'My Completed Works' : 'Completed Works'}</p>
+                <p className="text-xs">{completedWorks} works completed</p>
               </div>
             </div>
           </CardContent>

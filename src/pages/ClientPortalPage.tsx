@@ -1,22 +1,44 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
+  BarChart3,
+  Calendar,
   CheckCircle,
   Clock,
+  CreditCard,
   Download,
+  FileDown,
   FileText,
   IndianRupee,
-  Users,
-  CreditCard,
   LayoutDashboard,
   ListChecks,
+  Loader2,
+  PieChart as PieChartIcon,
   Receipt,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  TrendingUp,
+  Users,
 } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { useInvoiceStore } from "@/store/invoiceStore";
-import { generateWorkReportPDF } from "@/utils/pdfGenerator";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -24,21 +46,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-} from "recharts";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useInvoiceStore } from "@/store/invoiceStore";
 
 const API_URL = import.meta.env.VITE_API_URL || "https://digitalness-backend.onrender.com/api";
 
@@ -50,14 +66,23 @@ const COLORS = [
   "hsl(var(--accent))",
 ];
 
-type Section = "overview" | "team" | "tasks" | "payments" | "invoices";
+type Section =
+  | "overview"
+  | "team"
+  | "tasks"
+  | "payments"
+  | "invoices"
+  | "reports"
+  | "downloads";
 
-const NAV: { key: Section; label: string; icon: typeof LayoutDashboard }[] = [
+const NAV: { key: Section; label: string; icon: any }[] = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "team", label: "Team", icon: Users },
   { key: "tasks", label: "Tasks", icon: ListChecks },
   { key: "payments", label: "Payments", icon: CreditCard },
   { key: "invoices", label: "Invoices", icon: Receipt },
+  { key: "reports", label: "Reports", icon: BarChart3 },
+  { key: "downloads", label: "Downloads", icon: FileDown },
 ];
 
 const getAuthConfig = () => {
@@ -80,6 +105,8 @@ const getArrayData = (data: any) => {
   if (Array.isArray(data?.customers)) return data.customers;
   if (Array.isArray(data?.users)) return data.users;
   if (Array.isArray(data?.works)) return data.works;
+  if (Array.isArray(data?.invoices)) return data.invoices;
+  if (Array.isArray(data?.payments)) return data.payments;
   return [];
 };
 
@@ -96,34 +123,73 @@ const getCurrentUser = () => {
   }
 };
 
+const formatMoney = (amount: number) =>
+  `₹${Number(amount || 0).toLocaleString("en-IN")}`;
+
+const formatDate = (date?: string) => {
+  if (!date) return "-";
+  return new Date(date).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const getStatusVariant = (status: string): any => {
+  const s = String(status || "").toLowerCase();
+  if (s.includes("complete") || s.includes("paid") || s.includes("approved")) {
+    return "completed";
+  }
+  if (s.includes("progress") || s.includes("sent")) return "inProgress";
+  if (s.includes("review") || s.includes("pending")) return "warning";
+  if (s.includes("failed") || s.includes("overdue") || s.includes("rejected")) {
+    return "destructive";
+  }
+  return "secondary";
+};
+
 export default function ClientPortalPage() {
-  const { invoices, paymentRecords } = useInvoiceStore();
+  const { invoices: localInvoices, paymentRecords } = useInvoiceStore();
   const { toast } = useToast();
+  const currentUser = getCurrentUser();
+  const isCustomerRole = String(currentUser?.role || "").toLowerCase() === "customer";
 
   const [customers, setCustomers] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [works, setWorks] = useState<any[]>([]);
+  const [backendInvoices, setBackendInvoices] = useState<any[]>([]);
+  const [backendPayments, setBackendPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-
-  const currentUser = getCurrentUser();
-  const isCustomerRole = currentUser?.role === "Customer";
+  const [reportLoading, setReportLoading] = useState<string | null>(null);
 
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [active, setActive] = useState<Section>("overview");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [reportType, setReportType] = useState("monthly");
+  const [reportRange, setReportRange] = useState({
+    fromDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      .toISOString()
+      .split("T")[0],
+    toDate: new Date().toISOString().split("T")[0],
+  });
+  const [selectedWork, setSelectedWork] = useState<any>(null);
 
   const fetchBackendData = async () => {
     try {
       setLoading(true);
 
-      const [customersRes, usersRes, worksRes] = await Promise.all([
+      const requests = [
         fetch(`${API_URL}/customers`, getAuthConfig()),
         fetch(`${API_URL}/users`, getAuthConfig()),
         fetch(`${API_URL}/works`, getAuthConfig()),
-      ]);
+      ];
 
-      const customersData = await customersRes.json();
-      const usersData = await usersRes.json();
-      const worksData = await worksRes.json();
+      const [customersRes, usersRes, worksRes] = await Promise.all(requests);
+      const [customersData, usersData, worksData] = await Promise.all([
+        customersRes.json(),
+        usersRes.json(),
+        worksRes.json(),
+      ]);
 
       const customerList = getArrayData(customersData);
       const userList = getArrayData(usersData);
@@ -133,17 +199,31 @@ export default function ClientPortalPage() {
       setEmployees(userList);
       setWorks(workList);
 
+      try {
+        const [invoiceRes, paymentRes] = await Promise.all([
+          fetch(`${API_URL}/invoices`, getAuthConfig()),
+          fetch(`${API_URL}/payments`, getAuthConfig()),
+        ]);
+
+        if (invoiceRes.ok) setBackendInvoices(getArrayData(await invoiceRes.json()));
+        if (paymentRes.ok) setBackendPayments(getArrayData(await paymentRes.json()));
+      } catch {
+        setBackendInvoices([]);
+        setBackendPayments([]);
+      }
+
       if (!selectedCustomerId && customerList.length > 0) {
-        const customerUserId = currentUser?._id || currentUser?.id;
+        const currentUserId = currentUser?._id || currentUser?.id;
 
         const matchedCustomer = customerList.find((c: any) => {
-          const assignedId =
-            c.assignedTo?._id || c.assignedTo?.id || c.assignedTo;
-
+          const userId = c.userId?._id || c.userId?.id || c.userId;
+          const assignedId = c.assignedTo?._id || c.assignedTo?.id || c.assignedTo;
           return (
-            String(c._id || c.id) === String(customerUserId) ||
-            String(assignedId) === String(customerUserId) ||
-            c.email === currentUser?.email
+            String(userId) === String(currentUserId) ||
+            String(c._id || c.id) === String(currentUserId) ||
+            String(assignedId) === String(currentUserId) ||
+            String(c.email || "").toLowerCase() ===
+              String(currentUser?.email || "").toLowerCase()
           );
         });
 
@@ -156,7 +236,7 @@ export default function ClientPortalPage() {
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to fetch portal data",
+        description: "Failed to fetch client portal data",
         variant: "destructive",
       });
     } finally {
@@ -166,39 +246,27 @@ export default function ClientPortalPage() {
 
   useEffect(() => {
     fetchBackendData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const getCustomerId = (customer: any) => customer?._id || customer?.id;
-
   const getCustomerName = (customer: any) =>
-    customer?.name ||
-    customer?.customerName ||
-    customer?.clientName ||
-    customer?.companyName ||
-    "Unnamed Customer";
+    customer?.name || customer?.customerName || customer?.clientName || customer?.companyName || "Unnamed Customer";
 
   const getWorkCustomerId = (work: any) =>
-    work?.customer?._id ||
-    work?.customer?.id ||
-    work?.customer ||
-    work?.customerId;
+    work?.customer?._id || work?.customer?.id || work?.customer || work?.customerId;
 
   const getAssignedUsers = (assignedTo: any) => {
     if (!assignedTo) return [];
-
     const assignedArray = Array.isArray(assignedTo) ? assignedTo : [assignedTo];
 
     return assignedArray.map((user: any) => {
       if (typeof user === "object") {
         return {
           id: user._id || user.id,
-          name:
-            user.name ||
-            user.fullName ||
-            user.username ||
-            user.email ||
-            "Unassigned",
-          role: user.role || user.department || "Employee",
+          name: user.name || user.fullName || user.username || user.email || "Unassigned",
+          role: user.role || user.designation || user.department || "Employee",
+          email: user.email || "",
         };
       }
 
@@ -208,13 +276,9 @@ export default function ClientPortalPage() {
 
       return {
         id: user,
-        name:
-          found?.name ||
-          found?.fullName ||
-          found?.username ||
-          found?.email ||
-          "Unassigned",
-        role: found?.role || found?.department || "Employee",
+        name: found?.name || found?.fullName || found?.username || found?.email || "Unassigned",
+        role: found?.role || found?.designation || found?.department || "Employee",
+        email: found?.email || "",
       };
     });
   };
@@ -223,655 +287,748 @@ export default function ClientPortalPage() {
     (c) => String(getCustomerId(c)) === String(selectedCustomerId)
   );
 
-  const customerDeliverables = works
-    .filter((work) => String(getWorkCustomerId(work)) === String(selectedCustomerId))
-    .map((work) => {
-      const assignedUsers = getAssignedUsers(work.assignedTo);
-      const assignedUser = assignedUsers[0];
+  const allInvoices = backendInvoices.length > 0 ? backendInvoices : localInvoices || [];
+  const allPayments = backendPayments.length > 0 ? backendPayments : paymentRecords || [];
 
-      return {
-        id: work._id || work.id,
-        title: work.title || "Untitled Work",
-        category: work.workType || work.type || "General",
-        status: work.status || "Pending",
-        dueDate: work.dueDate || work.deadline || new Date().toISOString(),
-        completedDate:
-          work.status === "Completed" ? work.updatedAt || work.completedDate : null,
-        customerId: getWorkCustomerId(work),
-        assignedTo: assignedUser?.id || "",
-        assignedToName: assignedUser?.name || "Unassigned",
-        priority: work.priority || "Medium",
-        description: work.description || "",
-      };
+  const customerWorks = useMemo(() => {
+    return works
+      .filter((work) => String(getWorkCustomerId(work)) === String(selectedCustomerId))
+      .map((work) => {
+        const deliverables = Number(work.deliverables || 1);
+        const completedDeliverables = Number(work.completedDeliverables || 0);
+        const progress = deliverables
+          ? Math.min(Math.round((completedDeliverables / deliverables) * 100), 100)
+          : Number(work.progressPercentage || work.progress || 0);
+
+        return {
+          id: work._id || work.id,
+          title: work.title || "Untitled Work",
+          category: work.workType || work.type || "General",
+          status: work.status || "Pending",
+          priority: work.priority || "Medium",
+          dueDate: work.dueDate || work.deadline || "",
+          completedDate: work.status === "Completed" ? work.updatedAt || work.completedDate : null,
+          progress,
+          deliverables,
+          completedDeliverables,
+          description: work.description || "",
+          assignedUsers: getAssignedUsers(work.assignedTo),
+          attachments: Array.isArray(work.attachments) ? work.attachments : [],
+          updates: Array.isArray(work.updates) ? work.updates : [],
+          comments: Array.isArray(work.comments) ? work.comments : [],
+        };
+      });
+  }, [works, selectedCustomerId, employees]);
+
+  const customerInvoices = useMemo(() => {
+    return allInvoices.filter((invoice: any) => {
+      const invoiceCustomerId =
+        invoice.customer?._id || invoice.customer?.id || invoice.customer || invoice.customerId;
+      return String(invoiceCustomerId) === String(selectedCustomerId);
     });
+  }, [allInvoices, selectedCustomerId]);
 
-  const customerInvoices = invoices.filter(
-    (inv) => String(inv.customerId) === String(selectedCustomerId)
+  const customerPayments = useMemo(() => {
+    return allPayments.filter((payment: any) => {
+      const paymentCustomerId =
+        payment.customer?._id || payment.customer?.id || payment.customer || payment.customerId;
+      return String(paymentCustomerId) === String(selectedCustomerId);
+    });
+  }, [allPayments, selectedCustomerId]);
+
+  const filteredWorks = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return customerWorks.filter(
+      (work) =>
+        work.title.toLowerCase().includes(q) ||
+        work.category.toLowerCase().includes(q) ||
+        work.status.toLowerCase().includes(q)
+    );
+  }, [customerWorks, searchQuery]);
+
+  const uniqueTeam = useMemo(() => {
+    const map = new Map<string, any>();
+    customerWorks.forEach((work) => {
+      work.assignedUsers.forEach((user: any) => {
+        if (user.id && !map.has(String(user.id))) map.set(String(user.id), user);
+      });
+    });
+    return Array.from(map.values());
+  }, [customerWorks]);
+
+  const overview = useMemo(() => {
+    const total = customerWorks.length;
+    const completed = customerWorks.filter((w) => w.status === "Completed").length;
+    const inProgress = customerWorks.filter((w) => w.status === "In Progress").length;
+    const review = customerWorks.filter((w) => w.status === "Review").length;
+    const pending = customerWorks.filter((w) => ["Pending", "Not Started"].includes(w.status)).length;
+    const overdue = customerWorks.filter(
+      (w) => w.dueDate && new Date(w.dueDate) < new Date() && w.status !== "Completed"
+    ).length;
+    const avgProgress = total
+      ? Math.round(customerWorks.reduce((sum, w) => sum + Number(w.progress || 0), 0) / total)
+      : 0;
+    const paid = customerPayments.reduce((sum: number, p: any) => sum + Number(p.amount || p.paidAmount || 0), 0);
+    const invoiceTotal = customerInvoices.reduce((sum: number, inv: any) => sum + Number(inv.total || inv.amount || inv.grandTotal || 0), 0);
+    const pendingAmount = Math.max(invoiceTotal - paid, 0);
+
+    return {
+      total,
+      completed,
+      inProgress,
+      review,
+      pending,
+      overdue,
+      avgProgress,
+      paid,
+      invoiceTotal,
+      pendingAmount,
+      teamCount: uniqueTeam.length,
+    };
+  }, [customerWorks, customerInvoices, customerPayments, uniqueTeam]);
+
+  const statusChartData = useMemo(
+    () => [
+      { name: "Completed", value: overview.completed },
+      { name: "In Progress", value: overview.inProgress },
+      { name: "Review", value: overview.review },
+      { name: "Pending", value: overview.pending },
+      { name: "Overdue", value: overview.overdue },
+    ].filter((item) => item.value > 0),
+    [overview]
   );
 
-  const customerPayments = paymentRecords.filter(
-    (p) => String(p.customerId) === String(selectedCustomerId)
+  const progressChartData = useMemo(() => {
+    return customerWorks.map((work) => ({
+      name: work.title.length > 14 ? `${work.title.slice(0, 14)}...` : work.title,
+      progress: work.progress,
+    }));
+  }, [customerWorks]);
+
+  const reportSummary = useMemo(
+    () => ({
+      client: getCustomerName(customer),
+      company: customer?.companyName || customer?.businessName || "-",
+      email: customer?.email || "-",
+      phone: Array.isArray(customer?.contactNumbers)
+        ? customer.contactNumbers.join(", ")
+        : customer?.phone || customer?.contactNumber || "-",
+      businessType: customer?.businessType || "-",
+      branch: customer?.branchId || "-",
+      generatedOn: new Date().toLocaleString("en-IN"),
+      range: `${formatDate(reportRange.fromDate)} - ${formatDate(reportRange.toDate)}`,
+      totalWorks: overview.total,
+      completedWorks: overview.completed,
+      avgProgress: overview.avgProgress,
+      teamCount: overview.teamCount,
+      paid: overview.paid,
+      pendingAmount: overview.pendingAmount,
+    }),
+    [customer, overview, reportRange]
   );
 
-  const customerProjects = customerDeliverables;
+  const callReportApi = async (endpoint: string, label: string) => {
+    try {
+      if (!selectedCustomerId) return;
+      setReportLoading(label);
 
-  const completedDels = customerDeliverables.filter(
-    (d) => d.status === "Completed"
-  ).length;
+      const res = await fetch(endpoint, getAuthConfig());
 
-  const inProgressDels = customerDeliverables.filter(
-    (d) => d.status === "In Progress"
-  ).length;
-
-  const pendingDels = customerDeliverables.filter(
-    (d) => d.status === "Not Started" || d.status === "Pending"
-  ).length;
-
-  const reviewDels = customerDeliverables.filter(
-    (d) => d.status === "Review"
-  ).length;
-
-  const totalDels = customerDeliverables.length;
-
-  const progressPercent =
-    totalDels > 0 ? Math.round((completedDels / totalDels) * 100) : 0;
-
-  const totalPaid = customerPayments
-    .filter((p) => p.status === "Completed")
-    .reduce((s, p) => s + p.amount, 0);
-
-  const totalDue = customerInvoices.reduce(
-    (s, inv) => s + Math.max(0, inv.total - inv.paidAmount),
-    0
-  );
-
-  const completedWithDates = customerDeliverables.filter(
-    (d) => d.status === "Completed" && d.completedDate
-  );
-
-  const onTime = completedWithDates.filter(
-    (d) => new Date(d.completedDate!) <= new Date(d.dueDate)
-  ).length;
-
-  const onTimeRate =
-    completedWithDates.length > 0
-      ? Math.round((onTime / completedWithDates.length) * 100)
-      : 100;
-
-  const categoryData = Object.entries(
-    customerDeliverables.reduce<Record<string, number>>((acc, d) => {
-      acc[d.category] = (acc[d.category] || 0) + 1;
-      return acc;
-    }, {})
-  ).map(([name, value]) => ({ name, value }));
-
-  const statusData = [
-    { name: "Completed", value: completedDels },
-    { name: "In Progress", value: inProgressDels },
-    { name: "Review", value: reviewDels },
-    { name: "Pending", value: pendingDels },
-  ].filter((d) => d.value > 0);
-
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(amount || 0);
-
-  const handleDownloadReport = () => {
-    if (!customer) return;
-
-    const doc = generateWorkReportPDF(
-      getCustomerName(customer),
-      "Current Month",
-      customerDeliverables,
-      {
-        total: totalDels,
-        completed: completedDels,
-        inProgress: inProgressDels,
-        pending: pendingDels,
-        onTimeRate,
+      if (!res.ok) {
+        throw new Error("Report API not available yet");
       }
-    );
 
-    doc.save(
-      `WorkReport_${getCustomerName(customer).replace(/\s/g, "_")}.pdf`
-    );
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${label}-${getCustomerName(customer)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
 
-    toast({
-      title: "Report Downloaded",
-      description: "Monthly work report saved as PDF",
-    });
+      toast({ title: "Report Downloaded", description: `${label} downloaded successfully` });
+    } catch {
+      printClientReport(label);
+    } finally {
+      setReportLoading(null);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="text-center py-20 text-muted-foreground">
-        Loading client portal...
+  const printClientReport = (label: string) => {
+    const rows = customerWorks
+      .map(
+        (work) => `
+          <tr>
+            <td>${work.title}</td>
+            <td>${work.category}</td>
+            <td>${work.status}</td>
+            <td>${work.progress}%</td>
+            <td>${work.assignedUsers.map((u: any) => u.name).join(", ") || "-"}</td>
+            <td>${formatDate(work.dueDate)}</td>
+          </tr>`
+      )
+      .join("");
+
+    const win = window.open("", "_blank");
+    if (!win) return;
+
+    win.document.write(`
+      <html>
+        <head>
+          <title>${label}</title>
+          <style>
+            body{font-family:Arial,sans-serif;margin:0;padding:32px;color:#111827;background:#fff}
+            .header{border-bottom:3px solid #06053A;padding-bottom:18px;margin-bottom:24px}
+            .brand{font-size:28px;font-weight:800;color:#06053A;margin:0}
+            .sub{color:#6b7280;margin:4px 0 0}
+            .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}
+            .card{border:1px solid #e5e7eb;border-radius:12px;padding:14px;background:#f9fafb}
+            .card b{font-size:20px;color:#06053A}
+            table{width:100%;border-collapse:collapse;margin-top:18px;font-size:13px}
+            th{background:#06053A;color:white;text-align:left;padding:10px;border:1px solid #06053A}
+            td{padding:10px;border:1px solid #e5e7eb;vertical-align:top}
+            .section{margin-top:24px}
+            .footer{margin-top:32px;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb;padding-top:12px}
+            @media print{body{padding:20px}.no-print{display:none}}
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 class="brand">Digitalness Industries LLP</h1>
+            <p class="sub">Professional Client Work Report</p>
+          </div>
+
+          <h2>${label}</h2>
+          <p><b>Client:</b> ${reportSummary.client}</p>
+          <p><b>Company:</b> ${reportSummary.company}</p>
+          <p><b>Email:</b> ${reportSummary.email}</p>
+          <p><b>Phone:</b> ${reportSummary.phone}</p>
+          <p><b>Business Type:</b> ${reportSummary.businessType}</p>
+          <p><b>Branch:</b> ${reportSummary.branch}</p>
+          <p><b>Date Range:</b> ${reportSummary.range}</p>
+
+          <div class="grid">
+            <div class="card"><b>${reportSummary.totalWorks}</b><br/>Total Works</div>
+            <div class="card"><b>${reportSummary.completedWorks}</b><br/>Completed</div>
+            <div class="card"><b>${reportSummary.avgProgress}%</b><br/>Avg Progress</div>
+            <div class="card"><b>${formatMoney(reportSummary.pendingAmount)}</b><br/>Pending Amount</div>
+          </div>
+
+          <div class="section">
+            <h3>Project / Work Progress</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Work</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Progress</th>
+                  <th>Assigned Team</th>
+                  <th>Due Date</th>
+                </tr>
+              </thead>
+              <tbody>${rows || `<tr><td colspan="6">No works found</td></tr>`}</tbody>
+            </table>
+          </div>
+
+          <div class="footer">
+            Generated on ${reportSummary.generatedOn} · Digitalness CRM
+          </div>
+          <button class="no-print" onclick="window.print()" style="margin-top:20px;padding:10px 16px;background:#06053A;color:white;border:0;border-radius:8px">Print / Save PDF</button>
+        </body>
+      </html>
+    `);
+    win.document.close();
+  };
+
+  const downloadReport = (type: "daily" | "weekly" | "monthly" | "project" | "payment") => {
+    const params = new URLSearchParams({
+      fromDate: reportRange.fromDate,
+      toDate: reportRange.toDate,
+    });
+
+    const endpoints: Record<string, string> = {
+      daily: `${API_URL}/reports/customer/${selectedCustomerId}/daily?${params}`,
+      weekly: `${API_URL}/reports/customer/${selectedCustomerId}/weekly?${params}`,
+      monthly: `${API_URL}/reports/customer/${selectedCustomerId}/monthly?${params}`,
+      project: `${API_URL}/reports/customer/${selectedCustomerId}/projects?${params}`,
+      payment: `${API_URL}/reports/customer/${selectedCustomerId}/payments?${params}`,
+    };
+
+    const labels: Record<string, string> = {
+      daily: "Daily Client Report",
+      weekly: "Weekly Client Report",
+      monthly: "Monthly Client Report",
+      project: "Project Progress Report",
+      payment: "Payment Report",
+    };
+
+    callReportApi(endpoints[type], labels[type]);
+  };
+
+  const StatCard = ({ title, value, icon: Icon, className }: any) => (
+    <div className={cn("rounded-2xl border bg-card p-4 shadow-sm", className)}>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-2xl font-bold text-foreground">{value}</p>
+          <p className="text-sm text-muted-foreground">{title}</p>
+        </div>
+        <div className="rounded-xl bg-muted p-3">
+          <Icon className="h-5 w-5 text-muted-foreground" />
+        </div>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (!customer) {
-    return (
-      <div className="text-center py-20 text-muted-foreground">
-        Select a customer to view portal
+  const WorkCard = ({ work }: { work: any }) => (
+    <div className="rounded-2xl border bg-card p-4 shadow-sm transition hover:shadow-md">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="font-semibold text-foreground">{work.title}</h3>
+          <p className="text-sm text-muted-foreground">{work.category}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={getStatusVariant(work.status)}>{work.status}</Badge>
+          <Badge variant="outline">{work.priority}</Badge>
+        </div>
       </div>
-    );
-  }
 
-  const teamIds = new Set<string>();
+      <div className="mt-4 space-y-2">
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>Progress</span>
+          <span>{work.progress}%</span>
+        </div>
+        <Progress value={work.progress} />
+      </div>
 
-  customerDeliverables.forEach((d) => {
-    if (d.assignedTo) teamIds.add(String(d.assignedTo));
-  });
+      <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+        <div>
+          <p className="text-muted-foreground">Due Date</p>
+          <p className="font-medium">{formatDate(work.dueDate)}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">Deliverables</p>
+          <p className="font-medium">
+            {work.completedDeliverables}/{work.deliverables}
+          </p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">Team</p>
+          <p className="font-medium">{work.assignedUsers.length} member(s)</p>
+        </div>
+      </div>
 
-  const team = employees.filter((e) =>
-    teamIds.has(String(e._id || e.id))
+      <div className="mt-4 flex flex-wrap gap-2">
+        {work.assignedUsers.slice(0, 3).map((user: any) => (
+          <Badge key={user.id} variant="secondary">
+            {user.name}
+          </Badge>
+        ))}
+      </div>
+
+      <Button className="mt-4 w-full" variant="outline" onClick={() => setSelectedWork(work)}>
+        View Details
+      </Button>
+    </div>
   );
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6">
-      <aside className="lg:w-64 lg:shrink-0">
-        <div className="lg:sticky lg:top-4 space-y-4">
-          <div className="p-4 rounded-xl bg-card border border-border shadow-card">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-primary-foreground font-bold text-lg shrink-0">
-                {getCustomerName(customer).charAt(0)}
+    <div className="min-h-screen bg-muted/30 p-3 sm:p-5 lg:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl border bg-card p-5 shadow-sm lg:p-6"
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                <p className="text-sm font-medium text-primary">Client Portal</p>
               </div>
-              <div className="min-w-0">
-                <p className="font-heading font-bold text-sm truncate">
-                  {getCustomerName(customer)}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {customer.businessType || "Customer"}
-                </p>
+              <h1 className="mt-2 text-2xl font-bold text-foreground lg:text-3xl">
+                {getCustomerName(customer)} Dashboard
+              </h1>
+              <p className="mt-1 text-muted-foreground">
+                Track projects, team, reports, invoices, payments and downloads in one place.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              {!isCustomerRole && (
+                <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+                  <SelectTrigger className="w-full sm:w-[280px]">
+                    <SelectValue placeholder="Select customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers.map((c) => (
+                      <SelectItem key={getCustomerId(c)} value={getCustomerId(c)}>
+                        {getCustomerName(c)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              <Button variant="outline" onClick={fetchBackendData} disabled={loading}>
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Refresh
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            {NAV.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Button
+                  key={item.key}
+                  variant={active === item.key ? "default" : "outline"}
+                  className="justify-start"
+                  onClick={() => setActive(item.key)}
+                >
+                  <Icon className="mr-2 h-4 w-4" />
+                  {item.label}
+                </Button>
+              );
+            })}
+          </div>
+        </motion.div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
+          <StatCard title="Total Projects" value={overview.total} icon={FileText} />
+          <StatCard title="Completed" value={overview.completed} icon={CheckCircle} className="border-success/30 bg-success/10" />
+          <StatCard title="In Progress" value={overview.inProgress} icon={Clock} className="border-info/30 bg-info/10" />
+          <StatCard title="Avg Progress" value={`${overview.avgProgress}%`} icon={TrendingUp} />
+          <StatCard title="Team Members" value={overview.teamCount} icon={Users} />
+          <StatCard title="Pending Amount" value={formatMoney(overview.pendingAmount)} icon={IndianRupee} className="border-warning/30 bg-warning/10" />
+        </div>
+
+        {active === "overview" && (
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <div className="rounded-3xl border bg-card p-5 shadow-sm">
+              <h2 className="text-lg font-semibold">Project Status Overview</h2>
+              <div className="mt-4 h-[300px]">
+                {statusChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={statusChartData} cx="50%" cy="50%" outerRadius={90} dataKey="value" label>
+                        {statusChartData.map((_, index) => (
+                          <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-muted-foreground">No project data</div>
+                )}
               </div>
             </div>
 
-            {!isCustomerRole && (
-              <Select
-                value={selectedCustomerId}
-                onValueChange={setSelectedCustomerId}
-              >
-                <SelectTrigger className="w-full mt-3 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {customers.map((c) => (
-                    <SelectItem key={getCustomerId(c)} value={getCustomerId(c)}>
-                      {getCustomerName(c)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-
-          <nav className="p-2 rounded-xl bg-card border border-border shadow-card flex lg:flex-col gap-1 overflow-x-auto">
-            {NAV.map((item) => {
-              const Icon = item.icon;
-              const isActive = active === item.key;
-              const count =
-                item.key === "team"
-                  ? team.length
-                  : item.key === "tasks"
-                  ? totalDels
-                  : item.key === "payments"
-                  ? customerPayments.length
-                  : item.key === "invoices"
-                  ? customerInvoices.length
-                  : null;
-
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => setActive(item.key)}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex-1 lg:flex-none justify-start",
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span className="flex-1 text-left">{item.label}</span>
-                  {count !== null && (
-                    <span
-                      className={cn(
-                        "text-xs px-1.5 py-0.5 rounded-full",
-                        isActive
-                          ? "bg-primary-foreground/20"
-                          : "bg-muted text-muted-foreground"
-                      )}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-
-          <Button
-            variant="gradient"
-            onClick={handleDownloadReport}
-            className="w-full"
-          >
-            <Download className="w-4 h-4 mr-2" /> Download Report
-          </Button>
-        </div>
-      </aside>
-
-      <main className="flex-1 min-w-0 space-y-6">
-        <motion.div
-          key={active}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-        >
-          {active === "overview" && (
-            <>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                <StatBox label="Total Tasks" value={totalDels} />
-                <StatBox
-                  label="Completed"
-                  value={completedDels}
-                  variant="success"
-                />
-                <StatBox
-                  label="In Progress"
-                  value={inProgressDels}
-                  variant="warning"
-                />
-                <StatBox
-                  label="On-Time Rate"
-                  value={`${onTimeRate}%`}
-                  variant="gradient"
-                />
-                <StatBox label="Projects" value={customerProjects.length} />
-              </div>
-
-              <div className="p-5 rounded-xl bg-card border border-border shadow-card">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-heading font-bold">Overall Progress</h3>
-                  <span className="text-2xl font-bold text-primary">
-                    {progressPercent}%
-                  </span>
-                </div>
-                <Progress value={progressPercent} className="h-4" />
-                <div className="flex flex-wrap justify-between gap-2 mt-2 text-xs text-muted-foreground">
-                  <span>{completedDels} completed</span>
-                  <span>{reviewDels} in review</span>
-                  <span>{inProgressDels} in progress</span>
-                  <span>{pendingDels} pending</span>
-                </div>
-              </div>
-
-              <div className="p-5 rounded-xl bg-card border border-border shadow-card">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-heading font-bold">Task Progress</h3>
-                  <span className="text-2xl font-bold text-success">
-                    {progressPercent}%
-                  </span>
-                </div>
-                <Progress value={progressPercent} className="h-4" />
-                <p className="text-xs text-muted-foreground mt-2">
-                  {completedDels}/{totalDels} tasks completed across your
-                  projects
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="p-5 rounded-xl bg-card border border-border shadow-card">
-                  <h3 className="font-heading font-bold mb-4">
-                    Work Status Distribution
-                  </h3>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <PieChart>
-                      <Pie
-                        data={statusData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        {statusData.map((_, i) => (
-                          <Cell key={i} fill={COLORS[i]} />
-                        ))}
-                      </Pie>
-                      <Legend />
+            <div className="rounded-3xl border bg-card p-5 shadow-sm">
+              <h2 className="text-lg font-semibold">Progress by Project</h2>
+              <div className="mt-4 h-[300px]">
+                {progressChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={progressChartData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
                       <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="p-5 rounded-xl bg-card border border-border shadow-card">
-                  <h3 className="font-heading font-bold mb-4">
-                    Deliverables by Category
-                  </h3>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={categoryData}>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        stroke="hsl(var(--border))"
-                      />
-                      <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                      <YAxis allowDecimals={false} />
-                      <Tooltip />
-                      <Bar
-                        dataKey="value"
-                        fill="hsl(var(--primary))"
-                        radius={[4, 4, 0, 0]}
-                      />
+                      <Bar dataKey="progress" fill="hsl(var(--primary))" radius={[8, 8, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-muted-foreground">No progress data</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {active === "team" && (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {uniqueTeam.map((member: any) => (
+              <div key={member.id} className="rounded-2xl border bg-card p-5 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
+                    {member.name?.charAt(0) || "U"}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">{member.name}</h3>
+                    <p className="text-sm text-muted-foreground">{member.role}</p>
+                  </div>
+                </div>
+                {member.email && <p className="mt-3 text-sm text-muted-foreground">{member.email}</p>}
+              </div>
+            ))}
+            {uniqueTeam.length === 0 && <EmptyState title="No team assigned yet" />}
+          </div>
+        )}
+
+        {active === "tasks" && (
+          <div className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search projects, work type or status..."
+                className="pl-10"
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {filteredWorks.map((work) => <WorkCard key={work.id} work={work} />)}
+              {filteredWorks.length === 0 && <EmptyState title="No works found" />}
+            </div>
+          </div>
+        )}
+
+        {active === "payments" && (
+          <div className="rounded-3xl border bg-card p-5 shadow-sm">
+            <h2 className="text-lg font-semibold">Payment Summary</h2>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <StatCard title="Invoice Total" value={formatMoney(overview.invoiceTotal)} icon={Receipt} />
+              <StatCard title="Paid Amount" value={formatMoney(overview.paid)} icon={CheckCircle} />
+              <StatCard title="Pending Amount" value={formatMoney(overview.pendingAmount)} icon={Clock} />
+            </div>
+            <div className="mt-5 space-y-3">
+              {customerPayments.map((payment: any, index: number) => (
+                <div key={payment._id || payment.id || index} className="flex flex-col gap-2 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium">{payment.referenceId || payment.title || `Payment ${index + 1}`}</p>
+                    <p className="text-sm text-muted-foreground">{formatDate(payment.date || payment.createdAt)}</p>
+                  </div>
+                  <Badge variant="completed">{formatMoney(payment.amount || payment.paidAmount || 0)}</Badge>
+                </div>
+              ))}
+              {customerPayments.length === 0 && <EmptyState title="No payments found" />}
+            </div>
+          </div>
+        )}
+
+        {active === "invoices" && (
+          <div className="rounded-3xl border bg-card p-5 shadow-sm">
+            <h2 className="text-lg font-semibold">Invoices</h2>
+            <div className="mt-5 space-y-3">
+              {customerInvoices.map((invoice: any, index: number) => (
+                <div key={invoice._id || invoice.id || index} className="flex flex-col gap-3 rounded-xl border p-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="font-semibold">{invoice.invoiceNumber || invoice.title || `Invoice ${index + 1}`}</p>
+                    <p className="text-sm text-muted-foreground">{formatDate(invoice.date || invoice.createdAt)}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant={getStatusVariant(invoice.status)}>{invoice.status || "Pending"}</Badge>
+                    <Badge variant="outline">{formatMoney(invoice.total || invoice.amount || invoice.grandTotal || 0)}</Badge>
+                  </div>
+                </div>
+              ))}
+              {customerInvoices.length === 0 && <EmptyState title="No invoices found" />}
+            </div>
+          </div>
+        )}
+
+        {active === "reports" && (
+          <div className="space-y-5">
+            <div className="rounded-3xl border bg-card p-5 shadow-sm">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Client Reports</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Generate daily, weekly, monthly, project, payment and performance reports.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <p className="mb-1 text-xs text-muted-foreground">Report Type</p>
+                    <Select value={reportType} onValueChange={setReportType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">Daily</SelectItem>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                        <SelectItem value="project">Project</SelectItem>
+                        <SelectItem value="payment">Payment</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-xs text-muted-foreground">From</p>
+                    <Input
+                      type="date"
+                      value={reportRange.fromDate}
+                      onChange={(e) => setReportRange({ ...reportRange, fromDate: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-1 text-xs text-muted-foreground">To</p>
+                    <Input
+                      type="date"
+                      value={reportRange.toDate}
+                      onChange={(e) => setReportRange({ ...reportRange, toDate: e.target.value })}
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-5 rounded-xl bg-success/10 border border-success/30">
-                  <div className="flex items-center gap-2 mb-2">
-                    <IndianRupee className="w-5 h-5 text-success" />
-                    <span className="text-sm text-muted-foreground">
-                      Total Paid
-                    </span>
-                  </div>
-                  <p className="text-3xl font-heading font-bold text-success">
-                    {formatCurrency(totalPaid)}
-                  </p>
-                </div>
+              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <ReportButton title="Daily Report" type="daily" onClick={downloadReport} loading={reportLoading} />
+                <ReportButton title="Weekly Report" type="weekly" onClick={downloadReport} loading={reportLoading} />
+                <ReportButton title="Monthly Report" type="monthly" onClick={downloadReport} loading={reportLoading} />
+                <ReportButton title="Project Report" type="project" onClick={downloadReport} loading={reportLoading} />
+                <ReportButton title="Payment Report" type="payment" onClick={downloadReport} loading={reportLoading} />
+              </div>
+            </div>
 
-                <div className="p-5 rounded-xl bg-warning/10 border border-warning/30">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Clock className="w-5 h-5 text-warning" />
-                    <span className="text-sm text-muted-foreground">
-                      Outstanding Due
-                    </span>
+            <div className="rounded-3xl border bg-card p-5 shadow-sm">
+              <h2 className="text-lg font-semibold">Report Preview</h2>
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <PreviewItem label="Client" value={reportSummary.client} />
+                <PreviewItem label="Company" value={reportSummary.company} />
+                <PreviewItem label="Total Works" value={reportSummary.totalWorks} />
+                <PreviewItem label="Average Progress" value={`${reportSummary.avgProgress}%`} />
+                <PreviewItem label="Completed Works" value={reportSummary.completedWorks} />
+                <PreviewItem label="Team Members" value={reportSummary.teamCount} />
+                <PreviewItem label="Paid Amount" value={formatMoney(reportSummary.paid)} />
+                <PreviewItem label="Pending Amount" value={formatMoney(reportSummary.pendingAmount)} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {active === "downloads" && (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <DownloadCard title="Complete Client PDF" desc="Full client overview with projects, team and payments." onClick={() => printClientReport("Complete Client Report")} />
+            <DownloadCard title="Work History PDF" desc="All works, progress, assigned employees and status." onClick={() => downloadReport("project")} />
+            <DownloadCard title="Monthly Report PDF" desc="Monthly project and performance summary." onClick={() => downloadReport("monthly")} />
+            <DownloadCard title="Payment Report PDF" desc="Invoice total, paid amount and pending balance." onClick={() => downloadReport("payment")} />
+          </div>
+        )}
+      </div>
+
+      <Dialog open={Boolean(selectedWork)} onOpenChange={() => setSelectedWork(null)}>
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-4xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Work Details</DialogTitle>
+          </DialogHeader>
+          {selectedWork && (
+            <div className="space-y-5">
+              <div className="rounded-2xl border bg-muted/30 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold">{selectedWork.title}</h2>
+                    <p className="text-muted-foreground">{selectedWork.category}</p>
                   </div>
-                  <p className="text-3xl font-heading font-bold text-warning">
-                    {formatCurrency(totalDue)}
-                  </p>
+                  <Badge variant={getStatusVariant(selectedWork.status)}>{selectedWork.status}</Badge>
+                </div>
+                <div className="mt-4">
+                  <div className="mb-2 flex justify-between text-sm">
+                    <span>Progress</span>
+                    <span>{selectedWork.progress}%</span>
+                  </div>
+                  <Progress value={selectedWork.progress} />
+                </div>
+                <p className="mt-4 whitespace-pre-line text-sm">{selectedWork.description || "No description added"}</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <PreviewItem label="Due Date" value={formatDate(selectedWork.dueDate)} />
+                <PreviewItem label="Deliverables" value={`${selectedWork.completedDeliverables}/${selectedWork.deliverables}`} />
+                <PreviewItem label="Priority" value={selectedWork.priority} />
+              </div>
+
+              <div className="rounded-2xl border p-4">
+                <h3 className="font-semibold">Assigned Team</h3>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {selectedWork.assignedUsers.map((user: any) => (
+                    <div key={user.id} className="rounded-xl bg-muted/40 p-3">
+                      <p className="font-medium">{user.name}</p>
+                      <p className="text-sm text-muted-foreground">{user.role}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </>
-          )}
 
-          {active === "team" && (
-            <div>
-              <h2 className="text-xl font-heading font-bold mb-4">
-                Your Team
-              </h2>
-              {team.length === 0 ? (
-                <p className="text-center text-muted-foreground py-12 text-sm">
-                  No team assigned yet.
-                </p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {team.map((emp) => {
-                    const empId = emp._id || emp.id;
-                    const empTasks = customerDeliverables.filter(
-                      (d) => String(d.assignedTo) === String(empId)
-                    );
-                    const done = empTasks.filter(
-                      (t) => t.status === "Completed"
-                    ).length;
-                    const rate = empTasks.length
-                      ? Math.round((done / empTasks.length) * 100)
-                      : 0;
-
+              <div className="rounded-2xl border p-4">
+                <h3 className="font-semibold">Attachments</h3>
+                <div className="mt-3 space-y-2">
+                  {selectedWork.attachments.length === 0 && <p className="text-sm text-muted-foreground">No attachments found</p>}
+                  {selectedWork.attachments.map((file: any, index: number) => {
+                    const url = file.fileUrl || file.url || file;
+                    const name = file.fileName || String(url).split("/").pop() || `Attachment ${index + 1}`;
                     return (
-                      <div
-                        key={empId}
-                        className="p-4 rounded-xl bg-card border border-border shadow-card"
-                      >
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-primary font-semibold">
-                            {(emp.name || emp.email || "U").charAt(0)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm truncate">
-                              {emp.name ||
-                                emp.fullName ||
-                                emp.username ||
-                                emp.email}
-                            </p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {emp.role || emp.department || "Employee"}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-muted-foreground">
-                              Tasks
-                            </span>
-                            <span className="font-medium">
-                              {done}/{empTasks.length}
-                            </span>
-                          </div>
-                          <Progress value={rate} className="h-1.5" />
-                        </div>
+                      <div key={index} className="flex flex-col gap-2 rounded-xl bg-muted/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="font-medium">{name}</p>
+                        {url && (
+                          <a className="text-sm text-primary underline" href={url} target="_blank" rel="noreferrer">
+                            Open
+                          </a>
+                        )}
                       </div>
                     );
                   })}
                 </div>
-              )}
-            </div>
-          )}
-
-          {active === "tasks" && (
-            <div>
-              <h2 className="text-xl font-heading font-bold mb-4">
-                Current Deliverables
-              </h2>
-              <div className="space-y-2">
-                {customerDeliverables.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-12 text-sm">
-                    No deliverables for this period.
-                  </p>
-                ) : (
-                  customerDeliverables.map((del) => (
-                    <div
-                      key={del.id}
-                      className="p-3 rounded-lg bg-card border border-border flex items-center justify-between hover:shadow-sm transition-shadow"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={cn(
-                            "w-2 h-2 rounded-full",
-                            del.status === "Completed"
-                              ? "bg-success"
-                              : del.status === "In Progress"
-                              ? "bg-warning"
-                              : del.status === "Review"
-                              ? "bg-info"
-                              : "bg-muted-foreground"
-                          )}
-                        />
-                        <div>
-                          <p className="text-sm font-medium">{del.title}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {del.category} • {del.assignedToName}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-muted-foreground">
-                          Due:{" "}
-                          {new Date(del.dueDate).toLocaleDateString("en-IN", {
-                            day: "2-digit",
-                            month: "short",
-                          })}
-                        </span>
-                        <Badge
-                          variant={
-                            del.status === "Completed"
-                              ? "completed"
-                              : del.status === "In Progress"
-                              ? "inProgress"
-                              : del.status === "Review"
-                              ? "info"
-                              : "pending"
-                          }
-                        >
-                          {del.status}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))
-                )}
               </div>
             </div>
           )}
-
-          {active === "payments" && (
-            <div>
-              <h2 className="text-xl font-heading font-bold mb-4">
-                Payment History
-              </h2>
-              <div className="space-y-2">
-                {customerPayments.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-12 text-sm">
-                    No payments recorded yet.
-                  </p>
-                ) : (
-                  customerPayments.map((p) => (
-                    <div
-                      key={p.id}
-                      className="p-3 rounded-lg bg-card border border-border flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={cn(
-                            "w-2 h-2 rounded-full",
-                            p.status === "Completed"
-                              ? "bg-success"
-                              : "bg-warning"
-                          )}
-                        />
-                        <div>
-                          <p className="text-sm font-medium">
-                            {formatCurrency(p.amount)} via {p.method}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(p.date).toLocaleDateString("en-IN", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })}
-                            {p.reference && ` • Ref: ${p.reference}`}
-                          </p>
-                        </div>
-                      </div>
-                      <Badge
-                        variant={
-                          p.status === "Completed" ? "completed" : "warning"
-                        }
-                      >
-                        {p.status}
-                      </Badge>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
-          {active === "invoices" && (
-            <div>
-              <h2 className="text-xl font-heading font-bold mb-4">
-                Invoices
-              </h2>
-              <div className="space-y-2">
-                {customerInvoices.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-12 text-sm">
-                    No invoices yet.
-                  </p>
-                ) : (
-                  customerInvoices.map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="p-3 rounded-lg bg-card border border-border flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <FileText className="w-5 h-5 text-muted-foreground" />
-                        <div>
-                          <p className="text-sm font-medium">
-                            {inv.invoiceNumber}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(inv.createdDate).toLocaleDateString(
-                              "en-IN"
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-semibold text-sm">
-                          {formatCurrency(inv.total)}
-                        </span>
-                        <Badge
-                          variant={
-                            inv.status === "Paid"
-                              ? "completed"
-                              : inv.status === "Overdue"
-                              ? "failed"
-                              : inv.status === "Partially Paid"
-                              ? "warning"
-                              : "info"
-                          }
-                        >
-                          {inv.status}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </motion.div>
-      </main>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function StatBox({
-  label,
-  value,
-  variant,
-}: {
-  label: string;
-  value: string | number;
-  variant?: "success" | "warning" | "gradient";
-}) {
-  const cls =
-    variant === "success"
-      ? "bg-success/10 border-success/30 text-success"
-      : variant === "warning"
-      ? "bg-warning/10 border-warning/30 text-warning"
-      : variant === "gradient"
-      ? "gradient-primary text-primary-foreground border-transparent"
-      : "bg-card border-border text-foreground";
-
+function EmptyState({ title }: { title: string }) {
   return (
-    <div className={cn("p-4 rounded-xl border shadow-card text-center", cls)}>
-      <p className="text-2xl font-heading font-bold">{value}</p>
-      <p
-        className={cn(
-          "text-xs",
-          variant === "gradient"
-            ? "opacity-80"
-            : "text-muted-foreground"
-        )}
-      >
-        {label}
-      </p>
+    <div className="col-span-full rounded-2xl border border-dashed bg-card p-10 text-center text-muted-foreground">
+      {title}
+    </div>
+  );
+}
+
+function PreviewItem({ label, value }: { label: string; value: any }) {
+  return (
+    <div className="rounded-2xl border bg-card p-4">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 font-semibold text-foreground">{value || "-"}</p>
+    </div>
+  );
+}
+
+function ReportButton({ title, type, onClick, loading }: any) {
+  return (
+    <Button
+      variant="outline"
+      className="h-auto flex-col items-start gap-2 p-4 text-left"
+      onClick={() => onClick(type)}
+      disabled={loading === title}
+    >
+      <div className="flex w-full items-center justify-between">
+        <FileText className="h-5 w-5 text-primary" />
+        {loading === title ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+      </div>
+      <span className="font-semibold">{title}</span>
+      <span className="text-xs text-muted-foreground">Download / print PDF report</span>
+    </Button>
+  );
+}
+
+function DownloadCard({ title, desc, onClick }: any) {
+  return (
+    <div className="rounded-3xl border bg-card p-5 shadow-sm">
+      <div className="rounded-2xl bg-primary/10 p-3 text-primary w-fit">
+        <Download className="h-5 w-5" />
+      </div>
+      <h3 className="mt-4 font-semibold">{title}</h3>
+      <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
+      <Button className="mt-4 w-full" onClick={onClick}>
+        Download
+      </Button>
     </div>
   );
 }

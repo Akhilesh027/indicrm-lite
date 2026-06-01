@@ -120,8 +120,17 @@ const getArrayData = (data: any) => {
 export default function SalesPipelinePage() {
   const { toast } = useToast();
   const currentUser = getCurrentUser();
-  const isAdminOrManager = ["Admin", "Operational Manager"].includes(currentUser?.role || "");
-  const isTelecaller = currentUser?.role === "Telecaller";
+
+  const userRole = String(currentUser?.role || "")
+    .trim()
+    .toLowerCase();
+
+  const isAdmin = userRole === "admin";
+  const isOperationalManager =
+    userRole === "operational manager" || userRole === "operationalmanager";
+  const isAdminOrManager = isAdmin || isOperationalManager;
+  const isTelecaller = userRole === "telecaller";
+  const canAddDeal = isAdminOrManager;
 
   const [deals, setDeals] = useState<any[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
@@ -194,19 +203,32 @@ export default function SalesPipelinePage() {
       let allLeads = getArrayData(leadsData);
       let allEmployees = getArrayData(usersData);
 
-      // Role‑based filtering: non‑admin users see only their assigned items
-      if (!isAdminOrManager && currentUser?._id) {
+      // Role-based access
+      // Admin: all branches/data
+      // Operational Manager: own branch data only
+      // Telecaller/other users: only assigned deals/leads
+      if (isOperationalManager && currentUser?.branchId) {
         allDeals = allDeals.filter(
-          (deal: any) =>
-            extractId(deal.assignedTo) === currentUser._id
+          (deal: any) => String(deal.branchId) === String(currentUser.branchId)
         );
         allLeads = allLeads.filter(
-          (lead: any) =>
-            extractId(lead.assignedTo) === currentUser._id
+          (lead: any) => String(lead.branchId) === String(currentUser.branchId)
         );
-        // Employees list – telecaller sees only themselves (or hide)
         allEmployees = allEmployees.filter(
-          (emp: any) => extractId(emp._id) === currentUser._id
+          (emp: any) =>
+            String(emp.branchId || emp.branch?.branchId || emp.branch) ===
+              String(currentUser.branchId) ||
+            ["Admin", "Operational Manager"].includes(emp.role)
+        );
+      } else if (!isAdmin && currentUser?._id) {
+        allDeals = allDeals.filter(
+          (deal: any) => extractId(deal.assignedTo) === currentUser._id
+        );
+        allLeads = allLeads.filter(
+          (lead: any) => extractId(lead.assignedTo) === currentUser._id
+        );
+        allEmployees = allEmployees.filter(
+          (emp: any) => String(emp._id || emp.id) === String(currentUser._id)
         );
       }
 
@@ -255,7 +277,9 @@ export default function SalesPipelinePage() {
   };
 
   const branchName = (id: string) => {
-    const branch = branches.find((b) => b.id === id);
+    const branch = branches.find(
+      (b) => String(b.id) === String(id) || String(b.branchId) === String(id)
+    );
     return branch?.name || id || "—";
   };
 
@@ -277,13 +301,14 @@ export default function SalesPipelinePage() {
     // Apply branch filter (respect user's branch if telecaller)
     if (branchFilter !== "All") {
       filtered = filtered.filter((deal) => deal.branchId === branchFilter);
-    } else if (isTelecaller && currentUser?.branchId) {
-      // Telecallers should only see deals from their branch
-      filtered = filtered.filter((deal) => deal.branchId === currentUser.branchId);
+    } else if ((isTelecaller || isOperationalManager) && currentUser?.branchId) {
+      filtered = filtered.filter(
+        (deal) => String(deal.branchId) === String(currentUser.branchId)
+      );
     }
 
     return filtered;
-  }, [deals, search, branchFilter, isTelecaller, currentUser]);
+  }, [deals, search, branchFilter, isTelecaller, isOperationalManager, currentUser]);
 
   const dealsByStage = useMemo(() => {
     const grouped: Record<DealStage, any[]> = {
@@ -430,6 +455,15 @@ export default function SalesPipelinePage() {
   };
 
   const handleAddDeal = async () => {
+    if (!canAddDeal) {
+      toast({
+        title: "Access Denied",
+        description: "Only Admin and Operational Manager can add deals",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const lead = leads.find(
       (l: any) => String(l._id || l.id) === String(newDeal.leadId)
     );
@@ -458,7 +492,10 @@ export default function SalesPipelinePage() {
           lead?.mobile ||
           "",
         businessType: lead?.businessType || "",
-        branchId: newDeal.branchId || lead?.branchId || (branches[0]?.id || "BR001"),
+        branchId:
+          isOperationalManager && currentUser?.branchId
+            ? currentUser.branchId
+            : newDeal.branchId || lead?.branchId || branches[0]?.branchId || branches[0]?.id || "BR001",
         stage: "New",
         dealValue: Number(newDeal.dealValue),
         probability: Number(newDeal.probability),
@@ -496,7 +533,10 @@ export default function SalesPipelinePage() {
         probability: 50,
         expectedCloseDate: "",
         assignedTo: "",
-        branchId: branches[0]?.id || "BR001",
+        branchId:
+          isOperationalManager && currentUser?.branchId
+            ? currentUser.branchId
+            : branches[0]?.branchId || branches[0]?.id || "BR001",
         notes: "",
       });
     } catch (error: any) {
@@ -601,10 +641,12 @@ export default function SalesPipelinePage() {
           </p>
         </div>
 
-        <Button variant="gradient" onClick={() => setShowAdd(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Add Deal
-        </Button>
+        {canAddDeal && (
+          <Button variant="gradient" onClick={() => setShowAdd(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Deal
+          </Button>
+        )}
       </motion.div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -646,19 +688,24 @@ export default function SalesPipelinePage() {
           />
         </div>
 
-        <Select value={branchFilter} onValueChange={setBranchFilter}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="Branch" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="All">All Branches</SelectItem>
-            {branches.map((branch) => (
-              <SelectItem key={branch.id} value={branch.id}>
-                {branch.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {isAdmin && (
+          <Select value={branchFilter} onValueChange={setBranchFilter}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="Branch" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Branches</SelectItem>
+              {branches.map((branch) => (
+                <SelectItem
+                  key={branch.branchId || branch.id}
+                  value={branch.branchId || branch.id}
+                >
+                  {branch.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Button variant="outline" onClick={fetchData}>
           Refresh
@@ -775,7 +822,7 @@ export default function SalesPipelinePage() {
         ))}
       </div>
 
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+      <Dialog open={showAdd && canAddDeal} onOpenChange={setShowAdd}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>Add New Deal</DialogTitle>
@@ -850,23 +897,33 @@ export default function SalesPipelinePage() {
                 }
               />
 
-              <Select
-                value={newDeal.branchId}
-                onValueChange={(value) =>
-                  setNewDeal({ ...newDeal, branchId: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Branch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {branches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.branchId}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {isAdmin ? (
+                <Select
+                  value={newDeal.branchId}
+                  onValueChange={(value) =>
+                    setNewDeal({ ...newDeal, branchId: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branches.map((branch) => (
+                      <SelectItem
+                        key={branch.branchId || branch.id}
+                        value={branch.branchId || branch.id}
+                      >
+                        {branch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={branchName(currentUser?.branchId || newDeal.branchId)}
+                  disabled
+                />
+              )}
             </div>
 
             <Select

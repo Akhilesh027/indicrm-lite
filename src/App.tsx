@@ -33,7 +33,12 @@ import ExpensesPage from "./pages/ExpensesPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import AutoReportsPage from "./pages/AutoReportsPage";
 import WorkflowPage from "./pages/WorkflowPage";
+import EmployeeDailyUpdate from "./pages/EmployeeDailyUpdate";
+import AdminDailyUpdates from "./pages/AdminDailyUpdates";
+import BlogsPage from "./pages/BlogsPage";
+import RecruitmentPage from "./pages/RecruitmentPage";
 
+// Routes
 const queryClient = new QueryClient();
 
 const roleRoutes: Record<string, string> = {
@@ -120,6 +125,18 @@ const App = () => (
             <Route path="/sales-pipeline" element={<SalesPipelinePage />} />
             <Route path="/proposals" element={<ProposalsPage />} />
             <Route path="/branches" element={<BranchesPage />} />
+            
+            <Route path="/daily-update" element={<EmployeeDailyUpdate />} />
+            <Route
+              path="/admin/daily-updates"
+              element={<AdminDailyUpdates />}
+            />
+            <Route path="/daily-update" element={<EmployeeDailyUpdate />} />
+            <Route
+              path="/daily-updates-review"
+              element={<AdminDailyUpdates />}
+            />
+            <Route path="/blogs-page" element={<BlogsPage />} />
             <Route path="/templates" element={<TemplatesPage />} />
             <Route path="/tickets" element={<TicketsPage />} />
             <Route path="/tasks" element={<TasksPage />} />
@@ -130,6 +147,7 @@ const App = () => (
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/auto-reports" element={<AutoReportsPage />} />
             <Route path="/workflow" element={<WorkflowPage />} />
+            <Route path="/recruitment-page" element={<RecruitmentPage />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />
