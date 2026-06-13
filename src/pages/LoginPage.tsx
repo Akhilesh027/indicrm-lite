@@ -3,8 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { employees } from '@/data/dummyData';
 
-const API_URL = 'https://digitalness-backend.onrender.com/api';
+const roleRoutes: Record<string, string> = {
+  Admin: '/dashboard',
+  'Operational Manager': '/employees',
+  'Performance Marketer': '/performance',
+  'Content Writer': '/tasks',
+  'Graphic Designer': '/tasks',
+  'UI/UX': '/works',
+  'Frontend Dev': '/works',
+  'Backend Dev': '/works',
+  BDE: '/leads',
+  Support: '/tickets',
+};
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -16,97 +28,38 @@ export default function LoginPage() {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      toast({
-        title: 'Error',
-        description: 'Enter email and password',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Enter email and password', variant: 'destructive' });
       return;
     }
 
-    try {
-      setLoading(true);
+    setLoading(true);
+    await new Promise((r) => setTimeout(r, 200));
 
-      const res = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
+    const match = employees.find((e) => e.email?.toLowerCase() === email.toLowerCase());
+    const user = match
+      ? { _id: match.id, id: match.id, name: match.name, email: match.email, role: match.role, department: match.department }
+      : { _id: 'EMP001', id: 'EMP001', name: 'Admin User', email, role: 'Admin', department: 'Management' };
 
-      const data = await res.json();
+    localStorage.setItem('token', `mock-token-${Date.now()}`);
+    localStorage.setItem('user', JSON.stringify(user));
 
-      if (!res.ok) {
-        toast({
-          title: 'Login Failed',
-          description: data.message || 'Invalid credentials',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      // ✅ Save token + user
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-
-      toast({
-        title: 'Login Success',
-        description: `Welcome ${data.user.name}`,
-      });
-// remove duplicate localStorage lines
-
-localStorage.setItem("token", data.token);
-localStorage.setItem("user", JSON.stringify(data.user));
-
-const roleRoutes: Record<string, string> = {
-  Admin: "/dashboard",
-  "Operational Manager": "/employees",
-  "Performance Marketer": "/performance",
-  "Content Writer": "/tasks",
-  "Graphic Designer": "/tasks",
-  "UI/UX": "/works",
-  "Frontend Dev": "/works",
-  "Backend Dev": "/works",
-  BDE: "/leads",
-  Support: "/tickets",
-};
-
-navigate(roleRoutes[data.user.role] || "/dashboard", { replace: true });    } catch (error) {
-      toast({
-        title: 'Server Error',
-        description: 'Backend not running',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
+    toast({ title: 'Login Success', description: `Welcome ${user.name}` });
+    setLoading(false);
+    navigate(roleRoutes[user.role] || '/dashboard', { replace: true });
   };
 
   return (
     <div className="h-screen flex items-center justify-center bg-muted">
       <div className="w-full max-w-md p-6 bg-card rounded-xl border shadow">
-        <h2 className="text-2xl font-bold mb-6 text-center">
-          Digitalness CRM Login
-        </h2>
+        <h2 className="text-2xl font-bold mb-2 text-center">Digitalness CRM Login</h2>
+        <p className="text-xs text-center text-muted-foreground mb-6">
+          Demo mode — use any email/password. Use a known employee email (e.g. <code>admin@digitalness.in</code>) to log in as that role.
+        </p>
 
         <div className="space-y-4">
-          <Input
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-
-          <Input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-
-          <Button
-            onClick={handleLogin}
-            className="w-full"
-            disabled={loading}
-          >
+          <Input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <Button onClick={handleLogin} className="w-full" disabled={loading}>
             {loading ? 'Logging in...' : 'Login'}
           </Button>
         </div>
