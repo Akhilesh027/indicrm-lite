@@ -33,6 +33,11 @@ import ExpensesPage from "./pages/ExpensesPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import AutoReportsPage from "./pages/AutoReportsPage";
 import WorkflowPage from "./pages/WorkflowPage";
+import EmployeeDailyUpdate from "./pages/EmployeeDailyUpdate";
+import AdminDailyUpdates from "./pages/AdminDailyUpdates";
+import BlogsPage from "./pages/BlogsPage";
+
+
 
 // Routes
 const queryClient = new QueryClient();

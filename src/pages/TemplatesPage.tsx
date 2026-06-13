@@ -564,7 +564,7 @@ ${services.map((s: any) => `- ${s.name}: ₹${Number(s.price || 0).toLocaleStrin
 
   const templateTotal = (template: ProposalTemplate) => {
     const proposalTemplate = (template as any).proposalTemplate || {};
-    return Number(template.estimatedCost || proposalTemplate.grandTotal || template.grandTotal || 0);
+    return Number(template.estimatedCost || proposalTemplate.grandTotal || (template as any).grandTotal || 0);
   };
 
   return (
