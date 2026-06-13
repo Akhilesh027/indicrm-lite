@@ -28,7 +28,7 @@ const saveAll = (rows: MockMessage[]) => localStorage.setItem(KEY, JSON.stringif
 
 export const mockGetCustomers = () =>
   delay(dummyCustomers.map((c) => ({
-    _id: c.id, id: c.id, name: c.name, email: c.email, phone: c.contactNumber, businessName: c.businessName,
+    _id: c.id, id: c.id, name: c.name, email: (c as any).email, phone: (c as any).contactNumbers?.[0] || (c as any).contactNumber, businessName: (c as any).businessName || (c as any).business,
   })));
 
 export const mockGetEmployees = () =>
