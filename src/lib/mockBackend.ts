@@ -54,6 +54,7 @@ const create = (targetType: 'customer' | 'employee', targetId: string, payload: 
     createdAt: new Date().toISOString(),
     targetId,
     targetType,
+    byName: payload.byName || 'You',
   };
   const all = loadAll();
   all.unshift(row);
