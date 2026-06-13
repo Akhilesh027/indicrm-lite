@@ -19,6 +19,8 @@ interface MockMessage {
   createdAt: string;
   targetId: string;
   targetType: 'customer' | 'employee';
+  byName: string;
+  [key: string]: any;
 }
 
 const loadAll = (): MockMessage[] => {
